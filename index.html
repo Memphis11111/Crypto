@@ -384,40 +384,41 @@ function holdings(){
 }
 
 function poolCalc(p){
+  const sym=(p.sym||'').toUpperCase();
+  const live=S.prices[sym];
   const eIn = n(p.inUsdc)+n(p.inTok)*n(p.inPx);
-  const rew = n(p.rUsdc)+n(p.rTok)+n(p.rUni);
-  const o={sumIn:eIn,rewards:rew,closed:!!p.closed};
-  if(p.closed){
-    o.sumOut = n(p.outUsdc)+n(p.outTok)*n(p.outPx);
-    o.profit = o.sumOut+rew-eIn;
-    const dU=Math.abs(n(p.outUsdc)-n(p.inUsdc)), dT=Math.abs(n(p.inTok)-n(p.outTok));
-    o.eff = dT>0?dU/dT:0;
-    o.dir = n(p.outTok)<n(p.inTok) ? 'sell' : 'buy';   // pool sold token, or bought more
-    o.qtyMoved = dT;
+  // ціна, за якою рахуємо поточний/вихідний стан
+  const px = p.closed ? n(p.outPx) : live;
+  const o={sumIn:eIn,closed:!!p.closed,px};
+
+  if(px===undefined||px===null||!isFinite(px)){
+    o.sumOut=null;o.rewards=null;o.liveVal=null;o.unclaimed=0;o.profit=null;o.eff=0;
+    return o;
+  }
+  o.sumOut   = n(p.outUsdc)+n(p.outTok)*px;
+  o.unclaimed= n(p.rUsdcQty)+n(p.rTokQty)*px;
+  o.rewards  = o.unclaimed;
+  o.liveVal  = o.sumOut;
+
+  const dU=Math.abs(n(p.outUsdc)-n(p.inUsdc)), dT=Math.abs(n(p.inTok)-n(p.outTok));
+  o.eff = dT>0?dU/dT:0;
+  o.dir = n(p.outTok)<n(p.inTok) ? 'sell' : 'buy';
+  o.qtyMoved = dT;
+
+  if(p.closed && eIn>0){
+    o.profit = o.sumOut+o.rewards-eIn;
     const d=(new Date(p.outDate)-new Date(p.inDate))/864e5;
     o.days = d>0?d:0;
-    o.apr = o.days>0 && eIn>0 ? (rew/eIn)/(o.days/365) : null;
-    o.roi = eIn>0 ? o.profit/eIn : null;
-    // hold comparison uses current price
-    const cur=S.prices[(p.sym||'').toUpperCase()];
-    if(cur){
-      o.holdTok = n(p.inTok)*cur - n(p.inTok)*n(p.inPx);
+    o.apr = o.days>0 ? (o.rewards/eIn)/(o.days/365) : null;
+    o.roi = o.profit/eIn;
+    if(live!==undefined){
+      o.holdTok = n(p.inTok)*live - n(p.inTok)*n(p.inPx);
       const tokFromSum = n(p.inPx)>0 ? eIn/n(p.inPx) : 0;
-      o.holdSum = tokFromSum*cur - eIn;
-      o.vsHoldTok = o.profit-o.holdTok;
-      o.vsHoldSum = o.profit-o.holdSum;
+      o.holdSum = tokFromSum*live - eIn;
+      o.vsHoldTok=o.profit-o.holdTok; o.vsHoldSum=o.profit-o.holdSum;
     }
   }else{
-    const cur=S.prices[(p.sym||'').toUpperCase()];
-    // для відкритого пулу беремо поточний склад позиції, якщо він заповнений
-    const haveCur = (p.curUsdc!=='' && p.curUsdc!=null) || (p.curTok!=='' && p.curTok!=null);
-    if(cur!==undefined && haveCur){
-      o.liveVal = n(p.curUsdc)+n(p.curTok)*cur;
-      o.unclaimed = n(p.rUsdcQty)+n(p.rTokQty)*cur;
-    }else if(cur!==undefined){
-      o.liveVal = n(p.inUsdc)+n(p.inTok)*cur;
-      o.unclaimed = 0;
-    }else{ o.liveVal=null; o.unclaimed=0; }
+    o.profit = eIn>0 ? o.sumOut+o.rewards-eIn : null;
   }
   return o;
 }
@@ -451,8 +452,11 @@ function totals(){
       unclaimed += c.unclaimed||0;
     }
   }
-  const totalVal=val+unclaimed;
-  return {H,val,inv,real,inDefi,poolReal,unclaimed,net,
+  const netCalc=net;
+  if(S.netOverride!==undefined && S.netOverride!==null && S.netOverride!=='') net=n(S.netOverride);
+  // Реварди вже входять у звірені баланси активів, тому зверху не додаються
+  const totalVal=val;
+  return {H,val,inv,real,inDefi,poolReal,unclaimed,net,netCalc,
           totalVal, totalInv:inv, totalReal:real+poolReal,
           result: totalVal-net};
 }
@@ -632,7 +636,7 @@ function vOverview(){
         <div class="stat"><div class="k">Спот — незафіксований</div><div class="v num ${k(T.val-T.inv)}">${sgn(T.val-T.inv)}</div></div>
         <div class="stat"><div class="k">Спот — зафіксований</div><div class="v num ${k(T.real)}">${sgn(T.real)}</div><div class="s">з продажів</div></div>
         <div class="stat"><div class="k">З них у DeFi-пулах</div><div class="v num">${T.inDefi?usd(T.inDefi):'—'}</div><div class="s">частина спота, не додається зверху</div></div>
-        <div class="stat"><div class="k">Незабрані реварди</div><div class="v num ${T.unclaimed?'pos':''}">${T.unclaimed?usd(T.unclaimed):'—'}</div><div class="s">ще в пулі</div></div>
+        <div class="stat"><div class="k">Незабрані реварди</div><div class="v num ${T.unclaimed?'pos':''}">${T.unclaimed?usd(T.unclaimed):'—'}</div><div class="s">входять у баланс</div></div>
         <div class="stat"><div class="k">DeFi — закриті пули</div><div class="v num ${k(T.poolReal)}">${sgn(T.poolReal)}</div><div class="s">підсумковий результат</div></div>
         <div class="stat"><div class="k">Підсумок від початку</div><div class="v num ${k(T.result)}">${sgn(T.result)}</div><div class="s">вартість мінус заведене</div></div>
       </div>
@@ -741,6 +745,24 @@ function vAsset(){
         <div class="num" style="font-size:22px;font-weight:700">${val!==null?usd(val):'—'}</div>
         ${u!==null?`<div class="num ${k(u)}" style="font-size:14px">${sgn(u)} ${pc!==null?'('+pctS(pc)+')':''}</div>`:''}
       </div>
+      <div style="flex-basis:100%;height:0"></div>
+      <button class="btn gold" onclick="toggleAddTx()" style="width:100%">+ Додати транзакцію</button>
+    </div>
+    <div id="addTxBox" style="display:${S.showAddTx?'block':'none'};border-bottom:1px solid var(--rule-soft);padding:14px 16px;background:var(--ink-base)">
+      <div class="form">
+        <div class="f"><label>Тип</label><select id="aType">
+          <option value="buy">Купівля</option><option value="sell">Продаж</option>
+          <option value="reward">Реварди / дроп</option></select></div>
+        <div class="f"><label>Кількість</label><input id="aQty" type="number" step="any"></div>
+        <div class="f"><label>Ціна за шт.</label><input id="aPx" type="number" step="any"
+          value="${px!==undefined?px:''}" placeholder="0 = безкоштовно"></div>
+        <div class="f"><label>Місце</label><select id="aLoc">${S.locations.map(l=>`<option>${esc(l)}</option>`).join('')}</select></div>
+        <div class="f"><label>Дата</label><input id="aDate" type="date" value="${today()}"></div>
+        <div class="f"><label>Джерело грошей</label><select id="aExt">
+          <option value="1">Свої гроші ззовні</option><option value="0">Обмін усередині</option></select></div>
+        <div class="f"><label>Нотатка</label><input id="aNote" placeholder="необов'язково" style="font-family:var(--sans)"></div>
+        <div class="f"><button class="btn gold" onclick="addTxFor('${sym}')" style="width:100%">Зберегти</button></div>
+      </div>
     </div>
     <div class="panel-bd">
       <div class="stats">
@@ -771,26 +793,6 @@ function vAsset(){
     </div>
     <div class="panel-bd" style="border-top:1px solid var(--rule-soft)">
       <p class="faint" style="font-size:13px;margin:0">Разом розкладено ${qf(placed)} з ${qf(h.qty)}</p>
-    </div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-hd"><h2>Нова транзакція</h2><span class="note">${sym}</span></div>
-    <div class="panel-bd">
-      <div class="form">
-        <div class="f"><label>Тип</label><select id="aType">
-          <option value="buy">Купівля</option><option value="sell">Продаж</option>
-          <option value="reward">Реварди / дроп</option></select></div>
-        <div class="f"><label>Кількість</label><input id="aQty" type="number" step="any"></div>
-        <div class="f"><label>Ціна за шт.</label><input id="aPx" type="number" step="any"
-          value="${px!==undefined?px:''}" placeholder="0 = безкоштовно"></div>
-        <div class="f"><label>Місце</label><select id="aLoc">${S.locations.map(l=>`<option>${esc(l)}</option>`).join('')}</select></div>
-        <div class="f"><label>Дата</label><input id="aDate" type="date" value="${today()}"></div>
-        <div class="f"><label>Джерело грошей</label><select id="aExt">
-          <option value="1">Свої гроші ззовні</option><option value="0">Обмін усередині</option></select></div>
-        <div class="f"><label>Нотатка</label><input id="aNote" placeholder="необов'язково" style="font-family:var(--sans)"></div>
-        <div class="f"><button class="btn gold" onclick="addTxFor('${sym}')" style="width:100%">Додати</button></div>
-      </div>
     </div>
   </div>
 
@@ -879,77 +881,66 @@ function vDefi(){
 function poolCard(p,i){
   const c=poolCalc(p);
   const sym=(p.sym||'').toUpperCase();
+  const live=S.prices[sym];
   return `
   <div class="pool">
     <div class="pool-hd">
       <span class="pair">${esc(p.pair||'USDC / '+(sym||'?'))}</span>
-      <span class="rng">${p.inPx?usd(n(p.inPx),n(p.inPx)<1?4:2):'—'} → ${p.closed?usd(n(p.outPx),n(p.outPx)<1?4:2):'відкритий'}</span>
+      <span class="rng">${p.inPx?usd(n(p.inPx),n(p.inPx)<1?4:2):'вхід не вказано'} → ${p.closed?usd(n(p.outPx),n(p.outPx)<1?4:2):(live!==undefined?usd(live,live<1?4:2)+' зараз':'—')}</span>
       <span class="tag ${p.closed?'':'live'}">${p.closed?'закритий':'працює'}</span>
       <div class="grow" style="flex:1"></div>
       <button class="btn sm quiet danger" onclick="delPool(${i})">Видалити</button>
     </div>
     <div class="pool-bd">
       <div class="leg">
-        <h4>Вхід</h4>
+        <h4>Вхід у пул</h4>
         <div class="kv">
           <label>Актив</label><input value="${p.sym||''}" onchange="setPool(${i},'sym',this.value.toUpperCase())" placeholder="ETH">
           <label>Ціна</label><input type="number" step="any" value="${p.inPx??''}" onchange="setPool(${i},'inPx',this.value)">
           <label>Дата</label><input type="date" value="${p.inDate||''}" onchange="setPool(${i},'inDate',this.value)">
           <label>USDC</label><input type="number" step="any" value="${p.inUsdc??''}" onchange="setPool(${i},'inUsdc',this.value)">
-          <label>Токен</label><input type="number" step="any" value="${p.inTok??''}" onchange="setPool(${i},'inTok',this.value)">
+          <label>${sym||'Токен'}</label><input type="number" step="any" value="${p.inTok??''}" onchange="setPool(${i},'inTok',this.value)">
           <label>Діапазон</label><input value="${p.range||''}" onchange="setPool(${i},'range',this.value)" placeholder="15 – 60">
         </div>
       </div>
       <div class="leg">
-        <h4>Вихід і реварди</h4>
+        <h4>${p.closed?'Стан на виході':'Зараз у пулі'}</h4>
         <div class="kv">
-          <label>Ціна</label><input type="number" step="any" value="${p.outPx??''}" onchange="setPool(${i},'outPx',this.value)" placeholder="порожньо = ще відкритий">
-          <label>Дата</label><input type="date" value="${p.outDate||''}" onchange="setPool(${i},'outDate',this.value)">
           <label>USDC</label><input type="number" step="any" value="${p.outUsdc??''}" onchange="setPool(${i},'outUsdc',this.value)">
-          <label>Токен</label><input type="number" step="any" value="${p.outTok??''}" onchange="setPool(${i},'outTok',this.value)">
-          <label>Реварди USDC</label><input type="number" step="any" value="${p.rUsdc??''}" onchange="setPool(${i},'rUsdc',this.value)">
-          <label>Реварди токеном, $</label><input type="number" step="any" value="${p.rTok??''}" onchange="setPool(${i},'rTok',this.value)">
-          <label>Скільки токена</label><input type="number" step="any" value="${p.rTokQty??''}" onchange="setPool(${i},'rTokQty',this.value)" placeholder="0.973">
+          <label>${sym||'Токен'}</label><input type="number" step="any" value="${p.outTok??''}" onchange="setPool(${i},'outTok',this.value)">
+          <label>Реварди USDC</label><input type="number" step="any" value="${p.rUsdcQty??''}" onchange="setPool(${i},'rUsdcQty',this.value)">
+          <label>Реварди ${sym||'токеном'}</label><input type="number" step="any" value="${p.rTokQty??''}" onchange="setPool(${i},'rTokQty',this.value)">
+          ${p.closed?`<label>Ціна виходу</label><input type="number" step="any" value="${p.outPx??''}" onchange="setPool(${i},'outPx',this.value)">
+          <label>Дата виходу</label><input type="date" value="${p.outDate||''}" onchange="setPool(${i},'outDate',this.value)">`
+          :`<label>Ціна</label><input value="${live!==undefined?usd(live,live<1?4:2):'онови ціни'}" disabled style="opacity:.6">`}
         </div>
       </div>
-      <div class="pool-out">${p.closed?poolClosed(p,c,i):poolOpen(p,c)}</div>
+      <div class="pool-out">${p.closed?poolClosed(p,c,i):poolOpen(p,c,i)}</div>
     </div>
   </div>`;
 }
 
-function poolOpen(p,c){
-  const i=S.pools.indexOf(p), sym=(p.sym||'').toUpperCase();
+function poolOpen(p,c,i){
+  const sym=(p.sym||'').toUpperCase();
+  const noEntry=!n(p.inUsdc)&&!n(p.inTok);
   return `
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:14px">
-    <div class="leg"><h4>Зараз у пулі</h4>
-      <div class="kv">
-        <label>USDC</label><input type="number" step="any" value="${p.curUsdc??''}" onchange="setPool(${i},'curUsdc',this.value)" placeholder="805.65">
-        <label>${sym||'Токен'}</label><input type="number" step="any" value="${p.curTok??''}" onchange="setPool(${i},'curTok',this.value)" placeholder="0.2927">
-      </div>
-    </div>
-    <div class="leg"><h4>Незабрані реварди</h4>
-      <div class="kv">
-        <label>USDC</label><input type="number" step="any" value="${p.rUsdcQty??''}" onchange="setPool(${i},'rUsdcQty',this.value)" placeholder="64.97">
-        <label>${sym||'Токен'}</label><input type="number" step="any" value="${p.rTokQty??''}" onchange="setPool(${i},'rTokQty',this.value)" placeholder="0.0314">
-      </div>
-    </div>
-  </div>
   <div class="stats">
     <div class="stat"><div class="k">Вкладено на вході</div><div class="v num">${c.sumIn?usd(c.sumIn):'—'}</div></div>
-    <div class="stat"><div class="k">У пулі зараз</div><div class="v num">${c.liveVal!==null?usd(c.liveVal):'—'}</div>
-      <div class="s">${c.liveVal===null?'заповни склад і онови ціни':''}</div></div>
+    <div class="stat"><div class="k">У пулі зараз</div><div class="v num">${c.sumOut!==null?usd(c.sumOut):'—'}</div></div>
     <div class="stat"><div class="k">Незабрані реварди</div><div class="v num ${c.unclaimed?'pos':''}">${c.unclaimed?usd(c.unclaimed):'—'}</div></div>
-    <div class="stat"><div class="k">Разом позиція</div><div class="v num">${c.liveVal!==null?usd(c.liveVal+(c.unclaimed||0)):'—'}</div></div>
+    <div class="stat"><div class="k">Разом позиція</div><div class="v num">${c.sumOut!==null?usd(c.sumOut+c.unclaimed):'—'}</div></div>
+    <div class="stat"><div class="k">Поточний результат</div>
+      ${c.profit!==null?`<div class="v num ${k(c.profit)}">${sgn(c.profit)}</div>`:'<div class="v num faint">—</div><div class="s">немає даних входу</div>'}</div>
   </div>
-  ${(!n(p.inUsdc)&&!n(p.inTok))?`<div class="callout lose">
-    <b>Не заповнені дані входу.</b> Впиши ціну, дату, USDC і токен на момент,
-    коли заходив у пул — інакше не буде з чим порівнювати результат.</div>`:''}
+  ${noEntry?`<div class="callout lose"><b>Не заповнені дані входу.</b>
+    Впиши ціну, дату, USDC і токен на момент заходу — інакше немає з чим порівнювати.</div>`:''}
   <div class="callout" style="border-color:var(--gold-dim);background:rgba(201,162,39,.06)">
-    <b>Готовий закрити пул?</b> Впиши вище фактичні суми на виході й натисни кнопку —
-    пул перейде в закриті, порахується результат, APR і порівняння з холдом.
+    <b>Закрити пул?</b> Перевір суми вище — вони беруться як стан на виході.
+    Ціна і дата підставляться поточні.
     <div class="row"><button class="btn gold" onclick="closePool(${i})">Закрити пул</button></div>
   </div>
-  <div class="callout">Монети, що лежать у пулі, вже пораховані серед активів — тут вони показані окремо, щоб було видно, яка частина портфеля працює в DeFi. Незабрані реварди додаються до загальної суми.</div>`;
+  <div class="callout">Монети в пулі та незабрані реварди вже пораховані серед активів —
+  тут показано окремо, яка частина портфеля працює в DeFi.</div>`;
 }
 
 function poolClosed(p,c,i){
@@ -958,23 +949,23 @@ function poolClosed(p,c,i){
   return `
   <div class="stats">
     <div class="stat"><div class="k">Результат пулу</div>
-      ${c.sumIn>0?`<div class="v num ${k(c.profit)}">${sgn(c.profit)}</div>
-        <div class="s">${c.roi!==null?pctS(c.roi*100):''} за ${Math.round(c.days)} дн</div>`
-        :`<div class="v num faint">—</div><div class="s">немає даних входу</div>`}</div>
-    <div class="stat"><div class="k">Реварди</div><div class="v num">${usd(c.rewards)}</div></div>
+      ${c.sumIn>0&&c.profit!==null?`<div class="v num ${k(c.profit)}">${sgn(c.profit)}</div>
+        <div class="s">${c.roi!==undefined?pctS(c.roi*100):''} за ${Math.round(c.days||0)} дн</div>`
+        :'<div class="v num faint">—</div><div class="s">немає даних входу</div>'}</div>
+    <div class="stat"><div class="k">Реварди</div><div class="v num">${c.rewards!==null?usd(c.rewards):'—'}</div></div>
     <div class="stat"><div class="k">Ефективна ціна ${c.dir==='sell'?'продажу':'докупівлі'}</div>
       <div class="v num">${usd(c.eff,c.eff<1?4:2)}</div><div class="s">${qf(c.qtyMoved)} ${sym}</div></div>
-    <div class="stat"><div class="k">APR з ревардів</div><div class="v num">${c.apr!==null?f(c.apr*100,1)+'%':'—'}</div></div>
+    <div class="stat"><div class="k">APR з ревардів</div><div class="v num">${c.apr!==null&&c.apr!==undefined?f(c.apr*100,1)+'%':'—'}</div></div>
   </div>
-  ${c.vsHoldSum===undefined ? `<div class="callout">Онови ціни, щоб порівняти з холдом.</div>` : `
+  ${c.vsHoldSum===undefined?`<div class="callout">Онови ціни, щоб порівняти з холдом.</div>`:`
   <div class="callout ${win?'win':'lose'}">
     <b>${win?'Пул обіграв холд':'Холд був би вигіднішим'}</b> —
-    якби ти просто тримав ті самі ${qf(n(p.inTok))} ${sym}, мав би ${sgn(c.holdTok)};
+    якби просто тримав ті самі ${qf(n(p.inTok))} ${sym}, мав би ${sgn(c.holdTok)};
     якби всю суму ${usd(c.sumIn)} тримав у ${sym} — ${sgn(c.holdSum)}.
     Пул дав ${sgn(c.profit)}, тобто ${c.vsHoldSum>=0?'краще':'гірше'} на ${usd(Math.abs(c.vsHoldSum))}.
     <div class="row">
       <button class="btn" onclick="pushPool(${i})">${p.pushed?'Перенести ще раз':'Перенести в спот-транзакції'}</button>
-      <span class="faint" style="font-size:12.5px">${p.pushed?'уже перенесено':'створить '+(c.dir==='sell'?'продаж':'купівлю')+' '+qf(c.qtyMoved)+' '+sym+' по '+usd(c.eff,c.eff<1?4:2)+(n(p.rTokQty)>0?' і реварди '+qf(n(p.rTokQty))+' '+sym:'')}</span>
+      <span class="faint" style="font-size:12.5px">${p.pushed?'уже перенесено':'створить '+(c.dir==='sell'?'продаж':'купівлю')+' '+qf(c.qtyMoved)+' '+sym}</span>
     </div>
   </div>`}`;
 }
@@ -1042,6 +1033,28 @@ function vData(){
   </div>
 
   <div class="panel">
+    <div class="panel-hd"><h2>Скільки грошей заведено</h2>
+      <span class="note">впиши свою суму, якщо знаєш точно</span></div>
+    <div class="panel-bd">
+      <p style="font-size:13.5px;margin:0 0 12px">
+        <span class="dim">Розраховано за угодами:</span>
+        <span class="num">${usd(totals().netCalc)}</span>
+        <span class="faint"> — приблизно, бо в експорті CoinStats немає записів про поповнення рахунку</span>
+      </p>
+      <div class="form" style="grid-template-columns:1fr auto auto">
+        <div class="f"><label>Своя сума</label>
+          <input id="netOv" type="number" step="any" value="${S.netOverride??''}" placeholder="наприклад 5113"></div>
+        <div class="f"><button class="btn gold" onclick="saveNet()">Застосувати</button></div>
+        <div class="f"><button class="btn quiet" onclick="clearNet()">Скинути</button></div>
+      </div>
+      <p class="faint" style="font-size:13px;margin:9px 0 0">
+        Від цієї суми рахується підсумок: вартість портфеля мінус заведене.
+        Реварди в неї не входять — вони дохід, а не твої гроші.
+      </p>
+    </div>
+  </div>
+
+  <div class="panel">
     <div class="panel-hd"><h2>Ціни</h2><span class="note">джерела: CoinGecko, далі Coinbase</span></div>
     <div class="panel-bd">
       ${S.pxLog?`<p style="font-size:13.5px;margin:0 0 12px"><span class="dim">Останнє оновлення:</span> ${esc(S.pxLog)}</p>`:''}
@@ -1096,7 +1109,8 @@ function addTx(){
 function delTx(id){ S.tx=S.tx.filter(t=>t.id!==id); save(); render(); }
 
 function addPool(){
-  S.pools.unshift({sym:'',inPx:'',inDate:today(),inUsdc:'',inTok:'',outPx:'',outDate:'',outUsdc:'',outTok:'',rUsdc:'',rTok:'',rTokQty:'',range:'',closed:false,loc:'DeFi'});
+  S.pools.unshift({sym:'',inPx:'',inDate:today(),inUsdc:'',inTok:'',outPx:'',outDate:'',
+    outUsdc:'',outTok:'',rUsdcQty:'',rTokQty:'',range:'',closed:false,loc:'DeFi'});
   save(); render();
 }
 function setPool(i,f,v){
@@ -1112,13 +1126,10 @@ function closePool(i){
     toast('Заповни дані входу (ціна, дата, USDC і токен) — без них результат не порахується');
     return;
   }
-  if(!confirm('Закрити пул за поточними сумами?\n\nУ пулі: '+qf(n(p.curUsdc))+' USDC + '+qf(n(p.curTok))+' '+sym+
+  if(!confirm('Закрити пул за поточними сумами?\n\nУ пулі: '+qf(n(p.outUsdc))+' USDC + '+qf(n(p.outTok))+' '+sym+
               '\nРеварди: '+qf(n(p.rUsdcQty))+' USDC + '+qf(n(p.rTokQty))+' '+sym)) return;
   const d=today();
-  p.outUsdc=n(p.curUsdc); p.outTok=n(p.curTok);
-  p.outPx=px; p.outDate=d;
-  p.rUsdc=n(p.rUsdcQty); p.rTok=+(n(p.rTokQty)*px).toFixed(2);
-  p.closed=true;
+  p.outPx=px; p.outDate=d; p.closed=true;
   save(); render();
   toast('Пул закрито — перевір результат і перенеси в транзакції');
 }
@@ -1151,6 +1162,7 @@ function addLoc(){
 }
 function delLoc(i){ S.locations.splice(i,1); save(); render(); }
 
+function toggleAddTx(){ S.showAddTx=!S.showAddTx; save(); render(); }
 function addTxFor(sym){
   const qty=n(val('aQty'));
   if(!qty){ toast('Вкажи кількість'); return; }
@@ -1159,7 +1171,7 @@ function addTxFor(sym){
   S.tx.push({id:uid(),date:d,ts:Date.parse(d)+3,type,sym,qty,
              price:type==='reward'?0:n(val('aPx')),loc:val('aLoc'),
              note:val('aNote'),ext:type==='reward'?false:val('aExt')==='1'});
-  save(); render(); toast(sym+': запис додано');
+  S.showAddTx=false; save(); render(); toast(sym+': запис додано');
 }
 function setPlace(sym,loc,v){
   S.placement=S.placement||{};
@@ -1202,6 +1214,12 @@ function setPx(sym){
   if(v===null)return;
   S.prices[sym]=n(v); S.pxAt=Date.now(); save(); render();
 }
+function saveNet(){
+  const v=val('netOv').trim();
+  S.netOverride = v===''?null:n(v);
+  save(); render(); toast(v===''?'Скинуто':'Застосовано '+usd(n(v)));
+}
+function clearNet(){ S.netOverride=null; save(); render(); toast('Повернено розрахунок за угодами'); }
 function saveKey(){
   S.cgKey=val('cgKey').trim(); save(); render();
   toast(S.cgKey?'Ключ збережено':'Ключ прибрано');
