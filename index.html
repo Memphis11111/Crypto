@@ -574,6 +574,7 @@ function icoHtml(sym){
            : `<div class="ico-f">${esc(sym.slice(0,3))}</div>`;
 }
 function assetRow(h){
+  const mode=S.sort||'value';
   const px=S.prices[h.sym];
   const val=px!==undefined?h.qty*px:null;
   const avg=h.qty>0?h.cost/h.qty:0;
@@ -586,9 +587,14 @@ function assetRow(h){
       <div class="a-l2">${val!==null?usd(val):'—'}</div>
     </div>
     <div class="a-right">
-      ${u!==null?`<span class="a-pnl ${k(u)}">${sgn(u)}</span>
-        ${pc!==null?`<span class="a-badge ${k(u)}">${u>=0?'▲':'▼'} ${f(Math.abs(pc),2)}%</span>`:''}`
-        :'<span class="a-pnl faint">—</span>'}
+      ${(()=>{ const tot=(u||0)+h.realized;
+        const show = mode==='total'?tot:u;
+        if(show===null||show===undefined) return '<span class="a-pnl faint">—</span>';
+        return `<span class="a-pnl ${k(show)}">${sgn(show)}</span>`+
+          (mode==='total'
+            ? (h.realized?`<span class="a-badge ${k(show)}">з них ${sgn(h.realized)} зафікс.</span>`:'')
+            : (pc!==null?`<span class="a-badge ${k(show)}">${show>=0?'▲':'▼'} ${f(Math.abs(pc),2)}%</span>`:''));
+      })()}
       <span class="a-px">${px!==undefined?usd(px,px<1?4:2):'ціни немає'}</span>
     </div>
   </div>`;
@@ -606,11 +612,15 @@ function vOverview(){
 
   if(!S.tx.length && !S.pools.length) return emptyStart();
 
-  // by location
-  const locVal={};
-  for(const r of rows){ if(r.val===null)continue;
-    for(const L in r.byLoc){ const q=r.byLoc[L]; if(q>1e-12) locVal[L]=(locVal[L]||0)+q*r.px; } }
-  for(const p of S.pools){ if(!p.closed){ const c=poolCalc(p); if(c.unclaimed) locVal[p.loc||'DeFi']=(locVal[p.loc||'DeFi']||0)+c.unclaimed; } }
+  // Розподіл по місцях — з розкладки, яку заповнено на сторінках активів
+  const locVal={}; let placedTotal=0;
+  for(const s in (S.placement||{})){
+    const px=S.prices[s]; if(px===undefined) continue;
+    for(const L in S.placement[s]){
+      const q=n(S.placement[s][L]); if(q<=0) continue;
+      locVal[L]=(locVal[L]||0)+q*px; placedTotal+=q*px;
+    }
+  }
 
   const unreal=T.totalVal-T.totalInv;
 
@@ -650,7 +660,7 @@ function vOverview(){
 
   <div class="panel">
     <div class="panel-hd"><h2>Де що лежить</h2>
-      <span class="note">за місцями, вказаними в транзакціях</span></div>
+      <span class="note">${placedTotal>0?'розкладено '+usd(placedTotal)+' з '+usd(totKnown):'заповни на сторінках активів'}</span></div>
     <div class="tw"><table>
       <thead><tr><th>Місце</th><th>Вартість</th><th>Частка</th></tr></thead>
       <tbody>${(()=>{
@@ -675,11 +685,20 @@ function emptyStart(){
 }
 
 /* ---------- Assets ---------- */
+const SORTS=[['value','За вартістю'],['total','За прибутком за весь час'],['unreal','За незафіксованим']];
+function assetSortVal(h,mode){
+  const px=S.prices[h.sym], val=px!==undefined?h.qty*px:0;
+  const unreal=px!==undefined?val-h.cost:0;
+  if(mode==='unreal') return unreal;
+  if(mode==='total')  return unreal+h.realized;
+  return val;
+}
+function setSort(m){ S.sort=m; save(); render(); }
+
 function vAssets(){
   const H=holdings();
-  const rows=Object.values(H).sort((a,b)=>{
-    const av=(S.prices[a.sym]??0)*a.qty, bv=(S.prices[b.sym]??0)*b.qty; return bv-av;
-  });
+  const mode=S.sort||'value';
+  const rows=Object.values(H).sort((a,b)=>assetSortVal(b,mode)-assetSortVal(a,mode));
   const live=rows.filter(h=>h.qty>1e-9);
   const bad=rows.filter(h=>h.negative);
   const noPx=live.filter(h=>S.prices[h.sym]===undefined);
@@ -691,6 +710,11 @@ function vAssets(){
   <div class="panel">
     <div class="panel-hd"><h2>Активи</h2><span class="note">${live.length} шт · натисни, щоб відкрити</span>
       <div class="grow"></div><button class="btn sm" onclick="fetchPrices()">Оновити ціни</button></div>
+    <div class="panel-bd" style="border-bottom:1px solid var(--rule-soft);padding:10px 16px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${SORTS.map(([m,t])=>`<button class="btn sm ${mode===m?'gold':'quiet'}" onclick="setSort('${m}')">${t}</button>`).join('')}
+      </div>
+    </div>
     <div class="alist">${live.map(assetRow).join('') || '<div class="empty">Ще нічого немає</div>'}</div>
     ${noPx.length?`<div class="panel-bd" style="border-top:1px solid var(--rule-soft)">
       <p class="faint" style="font-size:13px;margin:0 0 7px">Без ціни — постав вручну:</p>
@@ -758,8 +782,10 @@ function vAsset(){
           value="${px!==undefined?px:''}" placeholder="0 = безкоштовно"></div>
         <div class="f"><label>Місце</label><select id="aLoc">${S.locations.map(l=>`<option>${esc(l)}</option>`).join('')}</select></div>
         <div class="f"><label>Дата</label><input id="aDate" type="date" value="${today()}"></div>
-        <div class="f"><label>Джерело грошей</label><select id="aExt">
-          <option value="1">Свої гроші ззовні</option><option value="0">Обмін усередині</option></select></div>
+        <div class="f"><label>Оплачено з</label><select id="aPay">
+          <option value="USDC">USDC</option><option value="USDT">USDT</option>
+          <option value="FIAT">Свої гроші ззовні</option>
+          <option value="NONE">Нічим (дроп, переказ)</option></select></div>
         <div class="f"><label>Нотатка</label><input id="aNote" placeholder="необов'язково" style="font-family:var(--sans)"></div>
         <div class="f"><button class="btn gold" onclick="addTxFor('${sym}')" style="width:100%">Зберегти</button></div>
       </div>
@@ -839,8 +865,10 @@ function vTx(){
         <div class="f"><label>Місце</label><select id="tLoc">${S.locations.map(l=>`<option>${esc(l)}</option>`).join('')}</select></div>
         <div class="f"><label>Дата</label><input id="tDate" type="date" value="${today()}"></div>
         <div class="f"><label>Нотатка</label><input id="tNote" placeholder="необов'язково" style="font-family:var(--sans)"></div>
-        <div class="f"><label>Джерело грошей</label>
-          <select id="tExt"><option value="1">Свої гроші ззовні</option><option value="0">Обмін усередині</option></select></div>
+        <div class="f"><label>Оплачено з</label><select id="tPay">
+          <option value="USDC">USDC</option><option value="USDT">USDT</option>
+          <option value="FIAT">Свої гроші ззовні</option>
+          <option value="NONE">Нічим (дроп, переказ)</option></select></div>
         <div class="f"><button class="btn gold" onclick="addTx()" style="width:100%">Додати</button></div>
       </div>
     </div>
@@ -972,25 +1000,43 @@ function poolClosed(p,c,i){
 
 /* ---------- Places ---------- */
 function vPlaces(){
-  const H=holdings();
   const locVal={};
-  for(const s in H){ const h=H[s],px=S.prices[s]; if(px===undefined)continue;
-    for(const L in h.byLoc){ const q=h.byLoc[L]; if(q>1e-12) locVal[L]=(locVal[L]||0)+q*px; } }
+  for(const sym in (S.placement||{})){
+    const px=S.prices[sym]; if(px===undefined) continue;
+    for(const L in S.placement[sym]){
+      const q=n(S.placement[sym][L]); if(q>0) locVal[L]=(locVal[L]||0)+q*px;
+    }
+  }
+  const ent=Object.entries(locVal).sort((a,b)=>b[1]-a[1]);
+  const base=ent.reduce((s,[,v])=>s+v,0);
   return `
   <div class="panel">
-    <div class="panel-hd"><h2>Місця зберігання</h2><span class="note">біржі, гаманці, холодне зберігання</span></div>
+    <div class="panel-hd"><h2>Місця зберігання</h2>
+      <span class="note">суми беруться з розкладки на сторінках активів</span></div>
+    <div class="alist">${ent.map(([L,v])=>`
+      <div class="arow" style="grid-template-columns:minmax(0,1fr) auto">
+        <div class="a-main"><div class="a-l1"><span class="a-sym">${esc(L)}</span></div>
+          <div class="a-l2">${base>0?f(v/base*100,1)+'% портфеля':''}</div></div>
+        <div class="a-right"><span class="a-pnl">${usd(v)}</span></div>
+      </div>`).join('') || '<div class="empty">Ще нічого не розкладено</div>'}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Список місць</h2>
+      <span class="note">використовується у формах</span></div>
     <div class="panel-bd">
       <div class="form" style="grid-template-columns:1fr auto">
-        <div class="f"><input id="newLoc" placeholder="Назва — наприклад, Ledger або Binance" style="font-family:var(--sans)"></div>
+        <div class="f"><input id="newLoc" placeholder="Назва — наприклад Ledger" style="font-family:var(--sans)"></div>
         <div class="f"><button class="btn gold" onclick="addLoc()">Додати</button></div>
       </div>
     </div>
-    <div class="tw"><table>
-      <thead><tr><th>Місце</th><th>Вартість</th><th></th></tr></thead>
-      <tbody>${S.locations.map((L,i)=>`
-        <tr><td>${esc(L)}</td><td class="num">${locVal[L]?usd(locVal[L]):'—'}</td>
-        <td><button class="btn sm quiet danger" onclick="delLoc(${i})">×</button></td></tr>`).join('')}</tbody>
-    </table></div>
+    <div class="alist">${S.locations.map((L,i)=>`
+      <div class="arow" style="grid-template-columns:minmax(0,1fr) auto">
+        <div class="a-main"><div class="a-l1"><span class="a-sym" style="font-size:14px">${esc(L)}</span></div></div>
+        <div class="a-right"><button class="btn sm quiet danger" onclick="delLoc(${i})">Прибрати</button></div>
+      </div>`).join('')}
+    </div>
   </div>`;
 }
 
@@ -1102,9 +1148,18 @@ function addOpening(){
 function addTx(){
   const sym=val('tSym').trim().toUpperCase(), qty=n(val('tQty'));
   if(!sym||!qty){ toast('Потрібні актив і кількість'); return; }
-  const d2=val('tDate')||today();
-  S.tx.push({id:uid(),date:d2,ts:Date.parse(d2),type:val('tType'),sym,qty,price:n(val('tPx')),loc:val('tLoc'),note:val('tNote'),ext:val('tExt')==='1'});
-  save(); render(); toast('Записано');
+  const d2=val('tDate')||today(), base=Date.parse(d2);
+  const type=val('tType'), pay=val('tPay'), price=type==='reward'?0:n(val('tPx'));
+  const loc=val('tLoc');
+  S.tx.push({id:uid(),date:d2,ts:base,type,sym,qty,price,loc,note:val('tNote'),
+             ext: pay==='FIAT' && type!=='reward'});
+  if((pay==='USDC'||pay==='USDT') && type!=='reward' && price>0){
+    const amount=qty*price;
+    S.tx.push({id:uid(),date:d2,ts:base+1,type:type==='sell'?'buy':'sell',
+      sym:pay,qty:+amount.toFixed(8),price:1,loc,
+      note:(type==='sell'?'отримано за продаж ':'витрачено на купівлю ')+sym,ext:false});
+  }
+  save(); render(); toast('Записано'+((pay==='USDC'||pay==='USDT')&&price>0?' · '+pay+' скориговано':''));
 }
 function delTx(id){ S.tx=S.tx.filter(t=>t.id!==id); save(); render(); }
 
@@ -1168,10 +1223,25 @@ function addTxFor(sym){
   if(!qty){ toast('Вкажи кількість'); return; }
   const d=val('aDate')||today();
   const type=val('aType');
-  S.tx.push({id:uid(),date:d,ts:Date.parse(d)+3,type,sym,qty,
-             price:type==='reward'?0:n(val('aPx')),loc:val('aLoc'),
-             note:val('aNote'),ext:type==='reward'?false:val('aExt')==='1'});
-  S.showAddTx=false; save(); render(); toast(sym+': запис додано');
+  const pay=val('aPay');
+  const price=type==='reward'?0:n(val('aPx'));
+  const loc=val('aLoc'), note=val('aNote');
+  const base=Date.parse(d);
+
+  S.tx.push({id:uid(),date:d,ts:base+3,type,sym,qty,price,loc,note,
+             ext: pay==='FIAT' && type!=='reward'});
+
+  // якщо платив стейблом — рухаємо його баланс у зворотний бік
+  if((pay==='USDC'||pay==='USDT') && type!=='reward' && price>0){
+    const amount=qty*price;
+    S.tx.push({id:uid(),date:d,ts:base+4,
+      type: type==='sell'?'buy':'sell',
+      sym:pay, qty:+amount.toFixed(8), price:1, loc,
+      note:(type==='sell'?'отримано за продаж ':'витрачено на купівлю ')+sym,
+      ext:false});
+  }
+  S.showAddTx=false; save(); render();
+  toast(sym+': записано'+((pay==='USDC'||pay==='USDT')&&price>0?' · '+pay+' скориговано':''));
 }
 function setPlace(sym,loc,v){
   S.placement=S.placement||{};
