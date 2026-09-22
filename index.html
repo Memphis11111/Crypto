@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Портфель</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink-base:#131A26;
+  --ink-panel:#1B2532;
+  --ink-raised:#223040;
+  --rule:#2D3C4E;
+  --rule-soft:#232F3E;
+  --text:#E8EDF2;
+  --text-2:#9AAABC;
+  --text-3:#66788C;
+  --pos:#5FD3A6;
+  --neg:#E8735F;
+  --gold:#C9A227;
+  --gold-dim:#8A7220;
+  --defi:#7AA5D2;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  --sans:'Source Sans 3',system-ui,-apple-system,sans-serif;
+  --r:10px;
+
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  margin:0;background:var(--ink-base);color:var(--text);
+  font-family:var(--sans);font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  padding:0 0 64px;
+}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.pos{color:var(--pos)}.neg{color:var(--neg)}.dim{color:var(--text-2)}.faint{color:var(--text-3)}
+button{font-family:inherit;font-size:inherit;cursor:pointer}
+input,select{font-family:inherit;font-size:inherit}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+.shell{max-width:1140px;margin:0 auto;padding:0 16px}
+
+/* ---------- Hero / reconciliation ---------- */
+.hero{
+  border-bottom:1px solid var(--rule);
+  background:linear-gradient(180deg,#16202E,var(--ink-base));
+  padding:22px 0 20px;margin-bottom:22px;
+}
+.hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.brand{font-size:15px;font-weight:600;letter-spacing:.01em}
+.brand span{color:var(--text-3);font-weight:400}
+.px-state{font-size:12px;color:var(--text-3);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.px-state button{
+  background:none;border:1px solid var(--rule);color:var(--text-2);
+  border-radius:6px;padding:3px 10px;font-size:12px;
+}
+.px-state button:hover{border-color:var(--gold);color:var(--text)}
+
+.balance{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:16px 0 4px}
+.balance .big{font-family:var(--mono);font-size:40px;font-weight:600;letter-spacing:-.02em}
+.balance .delta{font-family:var(--mono);font-size:17px;font-weight:500}
+
+/* the reconciliation strip — the one loud element */
+.recon{
+  display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:0;
+  border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;
+  margin-top:16px;background:var(--ink-panel);
+}
+.recon .cell{padding:12px 16px}
+.recon .op{
+  display:grid;place-items:center;padding:0 6px;color:var(--text-3);
+  font-family:var(--mono);font-size:16px;background:var(--ink-raised);
+}
+.recon .k{font-size:12px;color:var(--text-2);margin-bottom:3px}
+.recon .v{font-family:var(--mono);font-size:19px;font-weight:600}
+@media(max-width:760px){
+  .recon{grid-template-columns:1fr 1fr;}
+  .recon .op{display:none}
+  .recon .cell{border-bottom:1px solid var(--rule-soft)}
+}
+
+/* ---------- Nav ---------- */
+nav{display:flex;gap:2px;margin-bottom:20px;flex-wrap:wrap}
+nav button{
+  background:none;border:none;border-bottom:2px solid transparent;
+  color:var(--text-3);padding:8px 14px;font-weight:500;
+}
+nav button:hover{color:var(--text-2)}
+nav button.on{color:var(--text);border-bottom-color:var(--gold)}
+
+/* ---------- Panels ---------- */
+.panel{background:var(--ink-panel);border:1px solid var(--rule);border-radius:var(--r);margin-bottom:18px}
+.panel-hd{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:13px 16px;border-bottom:1px solid var(--rule-soft);
+}
+.panel-hd h2{margin:0;font-size:15px;font-weight:600}
+.panel-hd .note{font-size:12.5px;color:var(--text-3)}
+.panel-hd .grow{flex:1}
+.panel-bd{padding:14px 16px}
+
+/* ---------- Tables ---------- */
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
+th{
+  text-align:right;font-weight:500;font-size:12px;color:var(--text-3);
+  padding:7px 10px;border-bottom:1px solid var(--rule);white-space:nowrap;
+}
+th:first-child,td:first-child{text-align:left}
+td{padding:9px 10px;border-bottom:1px solid var(--rule-soft);text-align:right;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:rgba(255,255,255,.022)}
+.sym{font-weight:600}
+.sub{font-size:12px;color:var(--text-3);font-weight:400}
+tfoot td{border-top:1px solid var(--rule);border-bottom:none;font-weight:600;padding-top:11px}
+
+/* ---------- Buttons / forms ---------- */
+.btn{
+  background:var(--ink-raised);border:1px solid var(--rule);color:var(--text);
+  border-radius:7px;padding:6px 13px;font-size:13.5px;font-weight:500;
+}
+.btn:hover{border-color:var(--gold-dim)}
+.btn.gold{background:var(--gold);color:#17202B;border-color:var(--gold);font-weight:600}
+.btn.gold:hover{filter:brightness(1.08)}
+.btn.quiet{background:none}
+.btn.sm{padding:3px 9px;font-size:12.5px}
+.btn.danger:hover{border-color:var(--neg);color:var(--neg)}
+
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;align-items:end}
+.f label{display:block;font-size:12px;color:var(--text-2);margin-bottom:4px}
+.f input,.f select{
+  width:100%;background:var(--ink-base);border:1px solid var(--rule);
+  color:var(--text);border-radius:6px;padding:7px 9px;font-family:var(--mono);font-size:13.5px;
+}
+.f input:focus,.f select:focus{outline:none;border-color:var(--gold)}
+.f input::placeholder{color:var(--text-3)}
+input[type=date]{color-scheme:dark}
+
+/* ---------- DeFi pool ---------- */
+.pool{border:1px solid var(--rule);border-radius:var(--r);margin-bottom:14px;background:var(--ink-panel)}
+.pool-hd{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 15px;border-bottom:1px solid var(--rule-soft)}
+.pool-hd .pair{font-weight:600}
+.pool-hd .rng{font-family:var(--mono);font-size:12.5px;color:var(--text-2)}
+.tag{font-size:11.5px;padding:2px 9px;border-radius:20px;border:1px solid var(--rule);color:var(--text-2)}
+.tag.live{color:var(--pos);border-color:rgba(95,211,166,.4);background:rgba(95,211,166,.08)}
+.pool-bd{padding:14px 15px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:780px){.pool-bd{grid-template-columns:1fr}}
+.leg h4{margin:0 0 9px;font-size:13px;font-weight:600;color:var(--text-2)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
+.kv label{font-size:12.5px;color:var(--text-3)}
+.kv input{
+  background:var(--ink-base);border:1px solid var(--rule);color:var(--text);
+  border-radius:5px;padding:5px 8px;font-family:var(--mono);font-size:13px;width:100%;
+}
+.kv input:focus{outline:none;border-color:var(--gold)}
+.pool-out{grid-column:1/-1;border-top:1px solid var(--rule-soft);padding-top:13px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(124px,1fr));gap:11px}
+.stat{background:var(--ink-base);border:1px solid var(--rule-soft);border-radius:8px;padding:9px 11px}
+.stat .k{font-size:11.5px;color:var(--text-3);margin-bottom:3px}
+.stat .v{font-family:var(--mono);font-size:16px;font-weight:600}
+.stat .s{font-size:11px;color:var(--text-3);margin-top:2px}
+
+.callout{
+  margin-top:12px;padding:11px 13px;border-radius:8px;font-size:13.5px;
+  border:1px solid var(--rule);background:var(--ink-base);line-height:1.5;
+}
+.callout.win{border-color:rgba(95,211,166,.32);background:rgba(95,211,166,.06)}
+.callout.lose{border-color:rgba(232,115,95,.3);background:rgba(232,115,95,.05)}
+.callout b{font-weight:600}
+.callout .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:9px}
+
+.empty{padding:34px 18px;text-align:center;color:var(--text-3);font-size:14px}
+.empty b{display:block;color:var(--text-2);font-weight:600;margin-bottom:5px}
+
+.bar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.bar .grow{flex:1}
+
+.chip{display:inline-block;font-size:11.5px;padding:2px 8px;border-radius:5px;background:var(--ink-raised);color:var(--text-2);border:1px solid var(--rule-soft)}
+
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(8px);
+  background:var(--ink-raised);border:1px solid var(--gold-dim);color:var(--text);
+  padding:9px 17px;border-radius:8px;font-size:13.5px;opacity:0;pointer-events:none;
+  transition:opacity .18s,transform .18s;z-index:60;max-width:90vw;
+}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+dialog{
+  background:var(--ink-panel);color:var(--text);border:1px solid var(--rule);
+  border-radius:12px;padding:0;max-width:520px;width:calc(100vw - 32px);
+}
+dialog::backdrop{background:rgba(8,12,18,.72)}
+dialog .dlg-hd{padding:14px 18px;border-bottom:1px solid var(--rule-soft);font-weight:600}
+dialog .dlg-bd{padding:16px 18px}
+dialog .dlg-ft{padding:13px 18px;border-top:1px solid var(--rule-soft);display:flex;gap:9px;justify-content:flex-end}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="shell">
+    <div class="hero-top">
+      <div class="brand">Портфель <span>· спот і DeFi</span></div>
+      <div class="px-state">
+        <span id="pxInfo">ціни не завантажені</span>
+        <button onclick="fetchPrices()">Оновити ціни</button>
+      </div>
+    </div>
+    <div class="balance">
+      <span class="big num" id="totVal">—</span>
+      <span class="delta num" id="totDelta"></span>
+    </div>
+    <div class="recon">
+      <div class="cell"><div class="k">Вкладено зараз</div><div class="v num" id="rInv">—</div></div>
+      <div class="op">→</div>
+      <div class="cell"><div class="k">Вартість зараз</div><div class="v num" id="rVal">—</div></div>
+      <div class="op">+</div>
+      <div class="cell"><div class="k">Зафіксовано раніше</div><div class="v num" id="rReal">—</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+  <nav id="nav"></nav>
+  <div id="view"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<dialog id="dlg">
+  <div class="dlg-hd" id="dlgTitle"></div>
+  <div class="dlg-bd" id="dlgBody"></div>
+  <div class="dlg-ft">
+    <button class="btn quiet" onclick="document.getElementById('dlg').close()">Скасувати</button>
+    <button class="btn gold" id="dlgOk">Підтвердити</button>
+  </div>
+</dialog>
+
+<script>
+/* ============================================================
+   1. STORAGE
+   ============================================================ */
+const KEY='portfolio_v1';
+let S={
+  tab:'overview',
+  locations:['Біржа','Гаманець'],
+  tx:[],        // {id,date,type:buy|sell|reward,sym,qty,price,loc,note}
+  pools:[],     // defi positions
+  ids:{},       // sym -> coingecko id override
+  prices:{},    // sym -> usd
+  pxAt:null
+};
+
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
+function load(){
+  try{ const r=localStorage.getItem(KEY); if(r){ S=Object.assign(S,JSON.parse(r)); return true; } }catch(e){}
+  return false;
+}
+
+/* ============================================================
+   2. COINGECKO IDS
+   ============================================================ */
+const CG={
+  BTC:'bitcoin',ETH:'ethereum',USDC:'usd-coin',USDT:'tether',HYPE:'hyperliquid',
+  SOL:'solana',XRP:'ripple',ADA:'cardano',DOGE:'dogecoin',DOT:'polkadot',
+  ATOM:'cosmos',NEAR:'near',APT:'aptos',SUI:'sui',ARB:'arbitrum',OP:'optimism',
+  STRK:'starknet',LTC:'litecoin',DASH:'dash',KSM:'kusama',MINA:'mina-protocol',
+  CAKE:'pancakeswap-token',UNI:'uniswap',XCH:'chia',DYDX:'dydx-chain',
+  EIGEN:'eigenlayer',ZK:'zksync',ZRO:'layerzero',NOT:'notcoin','1INCH':'1inch',
+  UMA:'uma',LINK:'chainlink',ONDO:'ondo-finance',TAO:'bittensor',
+  INJ:'injective-protocol',JUP:'jupiter-exchange-solana',PEPE:'pepe',
+  WIF:'dogwifcoin',BONK:'bonk',AVAX:'avalanche-2',TIA:'celestia',
+  ENA:'ethena',RNDR:'render-token',MATIC:'matic-network'
+};
+const cgId = s => S.ids[s] || CG[s.toUpperCase()] || null;
+
+/* ============================================================
+   3. FORMAT
+   ============================================================ */
+const n=v=>{const x=parseFloat(v);return isNaN(x)?0:x;};
+function f(v,d=2){
+  if(v===null||v===undefined||isNaN(v))return '—';
+  return v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+}
+function usd(v,d=2){ if(v===null||v===undefined||isNaN(v))return '—'; return (v<0?'−$':'$')+f(Math.abs(v),d); }
+function sgn(v,d=2){ if(v===null||isNaN(v))return '—'; return (v>=0?'+$':'−$')+f(Math.abs(v),d); }
+function pctS(v){ if(v===null||!isFinite(v))return ''; return (v>=0?'+':'−')+f(Math.abs(v),1)+'%'; }
+function k(v){ return v>=0?'pos':'neg'; }
+function qf(q){ return Math.abs(q)>=1000?f(q,2):Math.abs(q)>=1?f(q,4):f(q,6); }
+const uid=()=>Math.random().toString(36).slice(2,10);
+
+/* ============================================================
+   4. ACCOUNTING — weighted average cost basis
+   ============================================================ */
+function txTime(t){
+  if(t.ts!==undefined && t.ts!==null && !isNaN(t.ts)) return +t.ts;
+  const d=Date.parse(t.date||''); return isNaN(d)?0:d;
+}
+function holdings(){
+  const H={};
+  const rows=S.tx.map((t,i)=>({t,i}))
+    .sort((a,b)=>(txTime(a.t)-txTime(b.t)) || (a.i-b.i))
+    .map(x=>x.t);
+  for(const t of rows){
+    const s=(t.sym||'').toUpperCase(); if(!s)continue;
+    H[s] = H[s] || {sym:s,qty:0,cost:0,realized:0,byLoc:{}};
+    const h=H[s], q=n(t.qty), p=n(t.price), loc=t.loc||'—';
+    if(t.type==='sell'){
+      const avg = h.qty>0 ? h.cost/h.qty : 0;
+      const sold = Math.min(q,h.qty);
+      h.realized += sold*(p-avg);
+      h.cost -= sold*avg;
+      h.qty  -= q;
+      h.byLoc[loc]=(h.byLoc[loc]||0)-q;
+    }else{ // buy | reward | opening
+      h.qty += q; h.cost += q*p;
+      h.byLoc[loc]=(h.byLoc[loc]||0)+q;
+    }
+    if(h.qty>0 && h.qty<1e-9){ h.qty=0; h.cost=0; }   // пил від округлень
+  }
+  for(const s in H){ H[s].negative = H[s].qty < -1e-9; }
+  return H;
+}
+
+function poolCalc(p){
+  const eIn = n(p.inUsdc)+n(p.inTok)*n(p.inPx);
+  const rew = n(p.rUsdc)+n(p.rTok)+n(p.rUni);
+  const o={sumIn:eIn,rewards:rew,closed:!!p.closed};
+  if(p.closed){
+    o.sumOut = n(p.outUsdc)+n(p.outTok)*n(p.outPx);
+    o.profit = o.sumOut+rew-eIn;
+    const dU=Math.abs(n(p.outUsdc)-n(p.inUsdc)), dT=Math.abs(n(p.inTok)-n(p.outTok));
+    o.eff = dT>0?dU/dT:0;
+    o.dir = n(p.outTok)<n(p.inTok) ? 'sell' : 'buy';   // pool sold token, or bought more
+    o.qtyMoved = dT;
+    const d=(new Date(p.outDate)-new Date(p.inDate))/864e5;
+    o.days = d>0?d:0;
+    o.apr = o.days>0 && eIn>0 ? (rew/eIn)/(o.days/365) : null;
+    o.roi = eIn>0 ? o.profit/eIn : null;
+    // hold comparison uses current price
+    const cur=S.prices[(p.sym||'').toUpperCase()];
+    if(cur){
+      o.holdTok = n(p.inTok)*cur - n(p.inTok)*n(p.inPx);
+      const tokFromSum = n(p.inPx)>0 ? eIn/n(p.inPx) : 0;
+      o.holdSum = tokFromSum*cur - eIn;
+      o.vsHoldTok = o.profit-o.holdTok;
+      o.vsHoldSum = o.profit-o.holdSum;
+    }
+  }else{
+    const cur=S.prices[(p.sym||'').toUpperCase()];
+    o.liveVal = cur? n(p.inUsdc)+n(p.inTok)*cur : null;
+  }
+  return o;
+}
+
+function totals(){
+  const H=holdings();
+  let val=0,inv=0,real=0;
+  for(const s in H){
+    const h=H[s], px=S.prices[s];
+    if(px!==undefined && h.qty>0) val += h.qty*px;
+    inv += h.cost;
+    real += h.realized;
+  }
+  // open pools add their live value; closed pools' profit counts as realized
+  let poolVal=0, poolReal=0, poolIn=0;
+  for(const p of S.pools){
+    const c=poolCalc(p);
+    if(p.closed){ poolReal += c.profit; }
+    else if(c.liveVal!==null){ poolVal += c.liveVal; poolIn += c.sumIn; }
+  }
+  return {H,val,inv,real,poolVal,poolReal,poolIn,
+          totalVal:val+poolVal, totalInv:inv+poolIn, totalReal:real+poolReal};
+}
+
+/* ============================================================
+   5. PRICES
+   ============================================================ */
+async function fetchPrices(){
+  const syms=new Set();
+  Object.keys(holdings()).forEach(s=>syms.add(s));
+  S.pools.forEach(p=>{ if(p.sym) syms.add(p.sym.toUpperCase()); });
+  const map={};
+  syms.forEach(s=>{ const id=cgId(s); if(id) map[id]=s; });
+  const ids=Object.keys(map);
+  if(!ids.length){ toast('Нема активів для оновлення'); return; }
+  toast('Завантажую ціни…');
+  try{
+    const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=usd');
+    if(!r.ok) throw new Error(r.status);
+    const d=await r.json();
+    let got=0;
+    for(const id in d){ if(map[id] && d[id].usd!==undefined){ S.prices[map[id]]=d[id].usd; got++; } }
+    S.pxAt=Date.now(); save(); render();
+    toast(got+' з '+ids.length+' цін оновлено');
+  }catch(e){
+    toast('CoinGecko не відповів. Постав ціну вручну в «Активах».');
+  }
+}
+
+/* ============================================================
+   6. RENDER
+   ============================================================ */
+const TABS=[
+  ['overview','Огляд'],
+  ['assets','Активи'],
+  ['tx','Транзакції'],
+  ['defi','DeFi пули'],
+  ['places','Місця зберігання'],
+  ['data','Дані']
+];
+
+function render(){
+  document.getElementById('nav').innerHTML =
+    TABS.map(([id,t])=>`<button class="${S.tab===id?'on':''}" onclick="go('${id}')">${t}</button>`).join('');
+  renderHero();
+  const v=document.getElementById('view');
+  v.innerHTML = ({overview:vOverview,assets:vAssets,tx:vTx,defi:vDefi,places:vPlaces,data:vData})[S.tab]();
+}
+function go(t){ S.tab=t; save(); render(); window.scrollTo(0,0); }
+
+function renderHero(){
+  const T=totals();
+  const unreal=T.totalVal-T.totalInv;
+  const pl=unreal+T.totalReal;
+  const hasAny = S.tx.length || S.pools.length;
+  document.getElementById('totVal').textContent = T.totalVal>0?usd(T.totalVal):(hasAny?'$0.00':'—');
+  const pct = T.totalInv>0 ? pl/T.totalInv*100 : null;
+  document.getElementById('totDelta').innerHTML =
+    hasAny && pl!==0 ? `<span class="${k(pl)}">${sgn(pl)} ${pct!==null?'('+pctS(pct)+')':''}</span>` : '';
+  document.getElementById('rInv').textContent  = usd(T.totalInv);
+  document.getElementById('rVal').innerHTML    = T.totalVal>0
+      ? `<span class="${k(unreal)}">${usd(T.totalVal)}</span>` : `<span class="faint">${usd(T.totalVal)}</span>`;
+  document.getElementById('rReal').innerHTML   = T.totalReal!==0
+      ? `<span class="${k(T.totalReal)}">${sgn(T.totalReal)}</span>` : `<span class="faint">$0.00</span>`;
+  const info=document.getElementById('pxInfo');
+  info.textContent = S.pxAt ? 'ціни оновлені '+new Date(S.pxAt).toLocaleString('uk-UA',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : 'ціни не завантажені';
+}
+
+/* ---------- Overview ---------- */
+function vOverview(){
+  const T=totals();
+  const H=T.H;
+  const rows=Object.values(H).filter(h=>h.qty>0)
+    .map(h=>{const px=S.prices[h.sym];return {...h,px,val:px!==undefined?h.qty*px:null};})
+    .sort((a,b)=>(b.val??-1)-(a.val??-1));
+  const known=rows.filter(r=>r.val!==null);
+  const totKnown=known.reduce((s,r)=>s+r.val,0)+T.poolVal;
+
+  if(!S.tx.length && !S.pools.length) return emptyStart();
+
+  // by location
+  const locVal={};
+  for(const r of rows){ if(r.val===null)continue;
+    for(const L in r.byLoc){ const q=r.byLoc[L]; if(q>1e-12) locVal[L]=(locVal[L]||0)+q*r.px; } }
+  for(const p of S.pools){ if(!p.closed){ const c=poolCalc(p); if(c.liveVal) locVal[p.loc||'DeFi']=(locVal[p.loc||'DeFi']||0)+c.liveVal; } }
+
+  const unreal=T.totalVal-T.totalInv;
+
+  const nudge = !S.tx.length ? `
+  <div class="panel" style="border-color:var(--gold-dim)">
+    <div class="panel-bd" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px">
+        <b>Спот ще не внесений.</b>
+        <div class="faint" style="font-size:13.5px;margin-top:3px">
+          DeFi-пули вже на місці. Додай монети, які лежать на біржі та гаманцях — і побачиш повну картину.</div>
+      </div>
+      <button class="btn gold" onclick="go('assets')">Внести активи</button>
+    </div>
+  </div>` : '';
+
+  return `
+  ${nudge}
+  <div class="panel">
+    <div class="panel-hd"><h2>Звідки складається результат</h2></div>
+    <div class="panel-bd">
+      <div class="stats">
+        <div class="stat"><div class="k">Спот — вартість</div><div class="v num">${usd(T.val)}</div><div class="s">вкладено ${usd(T.inv)}</div></div>
+        <div class="stat"><div class="k">Спот — незафіксований</div><div class="v num ${k(T.val-T.inv)}">${sgn(T.val-T.inv)}</div></div>
+        <div class="stat"><div class="k">Спот — зафіксований</div><div class="v num ${k(T.real)}">${sgn(T.real)}</div><div class="s">з продажів</div></div>
+        <div class="stat"><div class="k">DeFi — відкриті пули</div><div class="v num">${T.poolVal?usd(T.poolVal):'—'}</div></div>
+        <div class="stat"><div class="k">DeFi — закриті пули</div><div class="v num ${k(T.poolReal)}">${sgn(T.poolReal)}</div><div class="s">підсумковий результат</div></div>
+        <div class="stat"><div class="k">Разом P/L</div><div class="v num ${k(unreal+T.totalReal)}">${sgn(unreal+T.totalReal)}</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Найбільші позиції</h2><span class="note">${known.length} з ${rows.length} активів мають ціну</span></div>
+    <div class="tw"><table>
+      <thead><tr><th>Актив</th><th>Кількість</th><th>Ціна</th><th>Вартість</th><th>Частка</th><th>Незафіксований</th></tr></thead>
+      <tbody>${rows.slice(0,12).map(r=>{
+        const u = r.val!==null ? r.val-r.cost : null;
+        return `<tr>
+          <td><span class="sym">${r.sym}</span></td>
+          <td class="num">${qf(r.qty)}</td>
+          <td class="num dim">${r.px!==undefined?usd(r.px,r.px<1?4:2):'—'}</td>
+          <td class="num">${r.val!==null?usd(r.val):'—'}</td>
+          <td class="num faint">${r.val!==null&&totKnown>0?f(r.val/totKnown*100,1)+'%':'—'}</td>
+          <td class="num ${u!==null?k(u):''}">${u!==null?sgn(u):'—'}</td>
+        </tr>`;}).join('') || '<tr><td colspan="6" class="faint">Активів ще немає</td></tr>'}</tbody>
+    </table></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Де що лежить</h2>
+      <span class="note">за місцями, вказаними в транзакціях</span></div>
+    <div class="tw"><table>
+      <thead><tr><th>Місце</th><th>Вартість</th><th>Частка</th></tr></thead>
+      <tbody>${(()=>{
+        const ent=Object.entries(locVal).filter(([,v])=>v>0.005).sort((a,b)=>b[1]-a[1]);
+        const base=ent.reduce((s,[,v])=>s+v,0);
+        return ent.map(([L,v])=>`
+          <tr><td>${esc(L)}</td><td class="num">${usd(v)}</td>
+          <td class="num faint">${base>0?f(v/base*100,1)+'%':'—'}</td></tr>`).join('')
+          || '<tr><td colspan="3" class="faint">Додай місце до транзакції, щоб побачити розподіл</td></tr>';
+      })()}</tbody>
+    </table></div>
+  </div>`;
+}
+
+function emptyStart(){
+  return `<div class="panel"><div class="empty">
+    <b>Порожньо</b>
+    Почни з вкладки «Активи» — там можна внести те, що вже маєш,
+    одним рядком: кількість і середня ціна купівлі.
+    <div style="margin-top:14px"><button class="btn gold" onclick="go('assets')">Внести активи</button></div>
+  </div></div>`;
+}
+
+/* ---------- Assets ---------- */
+function vAssets(){
+  const H=holdings();
+  const rows=Object.values(H).sort((a,b)=>{
+    const av=(S.prices[a.sym]??0)*a.qty, bv=(S.prices[b.sym]??0)*b.qty; return bv-av;
+  });
+  const bad=rows.filter(h=>h.negative);
+  return `
+  ${bad.length?`<div class="panel" style="border-color:rgba(232,115,95,.45)">
+    <div class="panel-bd" style="display:flex;gap:12px;align-items:flex-start">
+      <span style="color:var(--neg);font-size:18px;line-height:1.2">!</span>
+      <div><b>Продано більше, ніж було на балансі:</b> ${bad.map(h=>h.sym+' ('+qf(h.qty)+')').join(', ')}.
+      <div class="faint" style="font-size:13px;margin-top:3px">
+        Найчастіша причина — продаж внесений, а початковий залишок ні. Додай купівлю нижче, і баланс зійдеться.</div></div>
+    </div></div>`:''}
+  <div class="panel">
+    <div class="panel-hd"><h2>Внести те, що вже є</h2>
+      <span class="note">один рядок на актив — кількість і середня ціна купівлі</span></div>
+    <div class="panel-bd">
+      <div class="form">
+        <div class="f"><label>Актив</label><input id="oSym" placeholder="ETH" style="text-transform:uppercase"></div>
+        <div class="f"><label>Кількість</label><input id="oQty" type="number" step="any" placeholder="0.5"></div>
+        <div class="f"><label>Середня ціна</label><input id="oPx" type="number" step="any" placeholder="2300"></div>
+        <div class="f"><label>Місце</label><select id="oLoc">${S.locations.map(l=>`<option>${esc(l)}</option>`).join('')}</select></div>
+        <div class="f"><label>Дата</label><input id="oDate" type="date" value="${today()}"></div>
+        <div class="f"><button class="btn gold" onclick="addOpening()" style="width:100%">Додати</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Активи</h2><div class="grow"></div>
+      <button class="btn sm" onclick="fetchPrices()">Оновити ціни</button></div>
+    <div class="tw"><table>
+      <thead><tr><th>Актив</th><th>Кількість</th><th>Сер. купівля</th><th>Ціна зараз</th>
+      <th>Вкладено</th><th>Вартість</th><th>Незафікс.</th><th>Зафікс.</th><th></th></tr></thead>
+      <tbody>${rows.map(h=>{
+        const px=S.prices[h.sym], val=px!==undefined?h.qty*px:null;
+        const avg=h.qty>0?h.cost/h.qty:0, u=val!==null?val-h.cost:null;
+        return `<tr>
+          <td><span class="sym">${h.sym}</span>${cgId(h.sym)?'':' <span class="chip">нема ціни</span>'}</td>
+          <td class="num">${qf(h.qty)}</td>
+          <td class="num dim">${avg>0?usd(avg,avg<1?4:2):'—'}</td>
+          <td class="num">${px!==undefined?usd(px,px<1?4:2):'—'}</td>
+          <td class="num dim">${usd(h.cost)}</td>
+          <td class="num">${val!==null?usd(val):'—'}</td>
+          <td class="num ${u!==null?k(u):''}">${u!==null?sgn(u):'—'}</td>
+          <td class="num ${k(h.realized)}">${h.realized?sgn(h.realized):'—'}</td>
+          <td><button class="btn sm quiet" onclick="setPx('${h.sym}')">ціна</button></td>
+        </tr>`;}).join('') || '<tr><td colspan="9" class="faint">Ще нічого немає</td></tr>'}</tbody>
+    </table></div>
+  </div>`;
+}
+
+/* ---------- Transactions ---------- */
+function vTx(){
+  const rows=[...S.tx].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  return `
+  <div class="panel">
+    <div class="panel-hd"><h2>Нова транзакція</h2></div>
+    <div class="panel-bd">
+      <div class="form">
+        <div class="f"><label>Тип</label><select id="tType">
+          <option value="buy">Купівля</option><option value="sell">Продаж</option>
+          <option value="reward">Реварди / дроп</option></select></div>
+        <div class="f"><label>Актив</label><input id="tSym" placeholder="HYPE" style="text-transform:uppercase"></div>
+        <div class="f"><label>Кількість</label><input id="tQty" type="number" step="any"></div>
+        <div class="f"><label>Ціна за шт.</label><input id="tPx" type="number" step="any" placeholder="0 = безкоштовно"></div>
+        <div class="f"><label>Місце</label><select id="tLoc">${S.locations.map(l=>`<option>${esc(l)}</option>`).join('')}</select></div>
+        <div class="f"><label>Дата</label><input id="tDate" type="date" value="${today()}"></div>
+        <div class="f"><label>Нотатка</label><input id="tNote" placeholder="необов'язково" style="font-family:var(--sans)"></div>
+        <div class="f"><button class="btn gold" onclick="addTx()" style="width:100%">Додати</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Історія</h2><span class="note">${rows.length} записів</span></div>
+    <div class="tw"><table>
+      <thead><tr><th>Дата</th><th>Тип</th><th>Актив</th><th>Кількість</th><th>Ціна</th><th>Сума</th><th>Місце</th><th></th></tr></thead>
+      <tbody>${rows.map(t=>`
+        <tr>
+          <td class="num dim">${t.date||'—'}</td>
+          <td>${({buy:'Купівля',sell:'Продаж',reward:'Реварди'})[t.type]||t.type}
+            ${t.note?`<div class="sub">${esc(t.note)}</div>`:''}</td>
+          <td class="sym">${t.sym}</td>
+          <td class="num ${t.type==='sell'?'neg':'pos'}">${t.type==='sell'?'−':'+'}${qf(n(t.qty))}</td>
+          <td class="num dim">${usd(n(t.price),n(t.price)<1?4:2)}</td>
+          <td class="num">${usd(n(t.qty)*n(t.price))}</td>
+          <td class="faint">${esc(t.loc||'—')}</td>
+          <td><button class="btn sm quiet danger" onclick="delTx('${t.id}')">×</button></td>
+        </tr>`).join('') || '<tr><td colspan="8" class="faint">Порожньо</td></tr>'}</tbody>
+    </table></div>
+  </div>`;
+}
+
+/* ---------- DeFi ---------- */
+function vDefi(){
+  return `
+  <div class="bar">
+    <button class="btn gold" onclick="addPool()">Новий пул</button>
+    <div class="grow"></div>
+    <span class="note faint">Закритий пул можна перенести в спот-транзакції однією кнопкою</span>
+  </div>
+  ${S.pools.map((p,i)=>poolCard(p,i)).join('') ||
+    `<div class="panel"><div class="empty"><b>Пулів ще немає</b>Додай перший — порахує профіт, APR і порівняє з простим холдом.</div></div>`}`;
+}
+
+function poolCard(p,i){
+  const c=poolCalc(p);
+  const sym=(p.sym||'').toUpperCase();
+  return `
+  <div class="pool">
+    <div class="pool-hd">
+      <span class="pair">${esc(p.pair||'USDC / '+(sym||'?'))}</span>
+      <span class="rng">${p.inPx?usd(n(p.inPx),n(p.inPx)<1?4:2):'—'} → ${p.closed?usd(n(p.outPx),n(p.outPx)<1?4:2):'відкритий'}</span>
+      <span class="tag ${p.closed?'':'live'}">${p.closed?'закритий':'працює'}</span>
+      <div class="grow" style="flex:1"></div>
+      <button class="btn sm quiet danger" onclick="delPool(${i})">Видалити</button>
+    </div>
+    <div class="pool-bd">
+      <div class="leg">
+        <h4>Вхід</h4>
+        <div class="kv">
+          <label>Актив</label><input value="${p.sym||''}" onchange="setPool(${i},'sym',this.value.toUpperCase())" placeholder="ETH">
+          <label>Ціна</label><input type="number" step="any" value="${p.inPx??''}" onchange="setPool(${i},'inPx',this.value)">
+          <label>Дата</label><input type="date" value="${p.inDate||''}" onchange="setPool(${i},'inDate',this.value)">
+          <label>USDC</label><input type="number" step="any" value="${p.inUsdc??''}" onchange="setPool(${i},'inUsdc',this.value)">
+          <label>Токен</label><input type="number" step="any" value="${p.inTok??''}" onchange="setPool(${i},'inTok',this.value)">
+          <label>Діапазон</label><input value="${p.range||''}" onchange="setPool(${i},'range',this.value)" placeholder="15 – 60">
+        </div>
+      </div>
+      <div class="leg">
+        <h4>Вихід і реварди</h4>
+        <div class="kv">
+          <label>Ціна</label><input type="number" step="any" value="${p.outPx??''}" onchange="setPool(${i},'outPx',this.value)" placeholder="порожньо = ще відкритий">
+          <label>Дата</label><input type="date" value="${p.outDate||''}" onchange="setPool(${i},'outDate',this.value)">
+          <label>USDC</label><input type="number" step="any" value="${p.outUsdc??''}" onchange="setPool(${i},'outUsdc',this.value)">
+          <label>Токен</label><input type="number" step="any" value="${p.outTok??''}" onchange="setPool(${i},'outTok',this.value)">
+          <label>Реварди USDC</label><input type="number" step="any" value="${p.rUsdc??''}" onchange="setPool(${i},'rUsdc',this.value)">
+          <label>Реварди токеном, $</label><input type="number" step="any" value="${p.rTok??''}" onchange="setPool(${i},'rTok',this.value)">
+          <label>Скільки токена</label><input type="number" step="any" value="${p.rTokQty??''}" onchange="setPool(${i},'rTokQty',this.value)" placeholder="0.973">
+        </div>
+      </div>
+      <div class="pool-out">${p.closed?poolClosed(p,c,i):poolOpen(p,c)}</div>
+    </div>
+  </div>`;
+}
+
+function poolOpen(p,c){
+  return `<div class="stats">
+    <div class="stat"><div class="k">Вкладено</div><div class="v num">${usd(c.sumIn)}</div></div>
+    <div class="stat"><div class="k">Вартість зараз</div><div class="v num">${c.liveVal!==null?usd(c.liveVal):'—'}</div>
+      <div class="s">${c.liveVal===null?'потрібна ціна активу':''}</div></div>
+    <div class="stat"><div class="k">Реварди зібрано</div><div class="v num">${usd(c.rewards)}</div></div>
+  </div>
+  <div class="callout">Поки пул відкритий, це орієнтовна вартість позиції за поточною ціною — без урахування того, як пул перерозподілив токени всередині діапазону.</div>`;
+}
+
+function poolClosed(p,c,i){
+  const sym=(p.sym||'').toUpperCase();
+  const win = c.vsHoldSum!==undefined ? c.vsHoldSum>=0 : null;
+  return `
+  <div class="stats">
+    <div class="stat"><div class="k">Результат пулу</div><div class="v num ${k(c.profit)}">${sgn(c.profit)}</div>
+      <div class="s">${c.roi!==null?pctS(c.roi*100):''} за ${Math.round(c.days)} дн</div></div>
+    <div class="stat"><div class="k">Реварди</div><div class="v num">${usd(c.rewards)}</div></div>
+    <div class="stat"><div class="k">Ефективна ціна ${c.dir==='sell'?'продажу':'докупівлі'}</div>
+      <div class="v num">${usd(c.eff,c.eff<1?4:2)}</div><div class="s">${qf(c.qtyMoved)} ${sym}</div></div>
+    <div class="stat"><div class="k">APR з ревардів</div><div class="v num">${c.apr!==null?f(c.apr*100,1)+'%':'—'}</div></div>
+  </div>
+  ${c.vsHoldSum===undefined ? `<div class="callout">Онови ціни, щоб порівняти з холдом.</div>` : `
+  <div class="callout ${win?'win':'lose'}">
+    <b>${win?'Пул обіграв холд':'Холд був би вигіднішим'}</b> —
+    якби ти просто тримав ті самі ${qf(n(p.inTok))} ${sym}, мав би ${sgn(c.holdTok)};
+    якби всю суму ${usd(c.sumIn)} тримав у ${sym} — ${sgn(c.holdSum)}.
+    Пул дав ${sgn(c.profit)}, тобто ${c.vsHoldSum>=0?'краще':'гірше'} на ${usd(Math.abs(c.vsHoldSum))}.
+    <div class="row">
+      <button class="btn" onclick="pushPool(${i})">${p.pushed?'Перенести ще раз':'Перенести в спот-транзакції'}</button>
+      <span class="faint" style="font-size:12.5px">${p.pushed?'уже перенесено':'створить '+(c.dir==='sell'?'продаж':'купівлю')+' '+qf(c.qtyMoved)+' '+sym+' по '+usd(c.eff,c.eff<1?4:2)+(n(p.rTokQty)>0?' і реварди '+qf(n(p.rTokQty))+' '+sym:'')}</span>
+    </div>
+  </div>`}`;
+}
+
+/* ---------- Places ---------- */
+function vPlaces(){
+  const H=holdings();
+  const locVal={};
+  for(const s in H){ const h=H[s],px=S.prices[s]; if(px===undefined)continue;
+    for(const L in h.byLoc){ const q=h.byLoc[L]; if(q>1e-12) locVal[L]=(locVal[L]||0)+q*px; } }
+  return `
+  <div class="panel">
+    <div class="panel-hd"><h2>Місця зберігання</h2><span class="note">біржі, гаманці, холодне зберігання</span></div>
+    <div class="panel-bd">
+      <div class="form" style="grid-template-columns:1fr auto">
+        <div class="f"><input id="newLoc" placeholder="Назва — наприклад, Ledger або Binance" style="font-family:var(--sans)"></div>
+        <div class="f"><button class="btn gold" onclick="addLoc()">Додати</button></div>
+      </div>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th>Місце</th><th>Вартість</th><th></th></tr></thead>
+      <tbody>${S.locations.map((L,i)=>`
+        <tr><td>${esc(L)}</td><td class="num">${locVal[L]?usd(locVal[L]):'—'}</td>
+        <td><button class="btn sm quiet danger" onclick="delLoc(${i})">×</button></td></tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
+
+/* ---------- Data ---------- */
+function vData(){
+  return `
+  <div class="panel">
+    <div class="panel-hd"><h2>Імпорт із CoinStats</h2><span class="note">експорт транзакцій у CSV</span></div>
+    <div class="panel-bd">
+      <div class="bar">
+        <button class="btn gold" onclick="document.getElementById('csv').click()">Завантажити CSV</button>
+        <input type="file" id="csv" accept=".csv,text/csv" style="display:none" onchange="importCsv(event)">
+        <label style="display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--text-2)">
+          <input type="checkbox" id="csvReplace" checked> замінити наявні транзакції
+        </label>
+      </div>
+      <p class="faint" style="font-size:13px;margin:6px 0 0">
+        У CoinStats: Портфель → три крапки → Export transactions. Записи з поміткою про пул
+        потраплять у місце «DeFi». Рядки без ціни імпортуються з нульовою собівартістю —
+        перевір їх у «Транзакціях».
+      </p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Резервна копія</h2><span class="note">дані зберігаються у цьому браузері</span></div>
+    <div class="panel-bd">
+      <div class="bar">
+        <button class="btn" onclick="exportJson()">Зберегти у файл</button>
+        <button class="btn" onclick="document.getElementById('imp').click()">Завантажити з файлу</button>
+        <input type="file" id="imp" accept="application/json" style="display:none" onchange="importJson(event)">
+        <div class="grow"></div>
+        <button class="btn danger quiet" onclick="wipe()">Очистити все</button>
+      </div>
+      <p class="faint" style="font-size:13px;margin:6px 0 0">
+        Якщо відкриєш трекер в іншому браузері або на телефоні — дані туди не перенесуться самі.
+        Збережи файл і завантаж його там.
+      </p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Ціни</h2><span class="note">якщо монети немає в CoinGecko — постав ціну вручну</span></div>
+    <div class="panel-bd">
+      <div class="form" style="grid-template-columns:1fr 1fr auto">
+        <div class="f"><label>Актив</label><input id="idSym" placeholder="HYPE" style="text-transform:uppercase"></div>
+        <div class="f"><label>ID у CoinGecko</label><input id="idVal" placeholder="hyperliquid" style="font-family:var(--sans)"></div>
+        <div class="f"><button class="btn" onclick="setId()">Зберегти</button></div>
+      </div>
+      ${Object.keys(S.ids).length?`<p class="faint" style="font-size:13px;margin-top:10px">Свої ID: ${Object.entries(S.ids).map(([s,v])=>`${s} → ${esc(v)}`).join(', ')}</p>`:''}
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+   7. ACTIONS
+   ============================================================ */
+function today(){ return new Date().toISOString().slice(0,10); }
+function esc(s){ return String(s??'').replace(/[<>&"]/g,m=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[m])); }
+function val(id){ return (document.getElementById(id)||{}).value||''; }
+
+function addOpening(){
+  const sym=val('oSym').trim().toUpperCase(), qty=n(val('oQty')), px=n(val('oPx'));
+  if(!sym||!qty){ toast('Потрібні актив і кількість'); return; }
+  const d1=val('oDate')||today();
+  S.tx.push({id:uid(),date:d1,ts:Date.parse(d1),type:'buy',sym,qty,price:px,loc:val('oLoc'),note:'початковий залишок'});
+  save(); render(); toast(sym+' додано');
+}
+function addTx(){
+  const sym=val('tSym').trim().toUpperCase(), qty=n(val('tQty'));
+  if(!sym||!qty){ toast('Потрібні актив і кількість'); return; }
+  const d2=val('tDate')||today();
+  S.tx.push({id:uid(),date:d2,ts:Date.parse(d2),type:val('tType'),sym,qty,price:n(val('tPx')),loc:val('tLoc'),note:val('tNote')});
+  save(); render(); toast('Записано');
+}
+function delTx(id){ S.tx=S.tx.filter(t=>t.id!==id); save(); render(); }
+
+function addPool(){
+  S.pools.unshift({sym:'',inPx:'',inDate:today(),inUsdc:'',inTok:'',outPx:'',outDate:'',outUsdc:'',outTok:'',rUsdc:'',rTok:'',rTokQty:'',range:'',closed:false,loc:'DeFi'});
+  save(); render();
+}
+function setPool(i,f,v){
+  S.pools[i][f]=v;
+  const p=S.pools[i];
+  p.closed = !!(p.outPx!=='' && p.outPx!=null && p.outDate);
+  save(); render();
+}
+function delPool(i){ if(!confirm('Видалити пул?'))return; S.pools.splice(i,1); save(); render(); }
+
+function pushPool(i){
+  const p=S.pools[i], c=poolCalc(p), sym=(p.sym||'').toUpperCase();
+  if(p.pushed && !confirm('Цей пул уже переносили в транзакції. Додати ще раз?')) return;
+  const d=p.outDate||today();
+  const made=[];
+  if(c.qtyMoved>0){
+    S.tx.push({id:uid(),date:d,ts:Date.parse(d),type:c.dir==='sell'?'sell':'buy',sym,qty:+c.qtyMoved.toFixed(8),
+               price:+c.eff.toFixed(6),loc:p.loc||'DeFi',note:'пул '+(p.pair||'USDC/'+sym)});
+    made.push((c.dir==='sell'?'продаж ':'купівля ')+qf(c.qtyMoved)+' '+sym);
+  }
+  if(n(p.rTokQty)>0){
+    const rp = n(p.rTok)>0 ? n(p.rTok)/n(p.rTokQty) : 0;
+    S.tx.push({id:uid(),date:d,ts:Date.parse(d)+1,type:'reward',sym,qty:n(p.rTokQty),price:+rp.toFixed(6),
+               loc:p.loc||'DeFi',note:'реварди пулу'});
+    made.push('реварди '+qf(n(p.rTokQty))+' '+sym);
+  }
+  p.pushed=true; save(); render();
+  toast('Додано: '+made.join(', '));
+}
+
+function addLoc(){
+  const v=val('newLoc').trim(); if(!v)return;
+  if(!S.locations.includes(v)) S.locations.push(v);
+  save(); render();
+}
+function delLoc(i){ S.locations.splice(i,1); save(); render(); }
+
+function setPx(sym){
+  const cur=S.prices[sym]??'';
+  const v=prompt('Ціна '+sym+' у доларах:',cur);
+  if(v===null)return;
+  S.prices[sym]=n(v); S.pxAt=Date.now(); save(); render();
+}
+function setId(){
+  const s=val('idSym').trim().toUpperCase(), v=val('idVal').trim();
+  if(!s||!v)return;
+  S.ids[s]=v; save(); render(); toast(s+' → '+v);
+}
+
+function exportJson(){
+  const b=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(b); a.download='portfolio-'+today()+'.json'; a.click();
+  URL.revokeObjectURL(a.href); toast('Файл збережено');
+}
+function importJson(e){
+  const file=e.target.files[0]; if(!file)return;
+  const r=new FileReader();
+  r.onload=()=>{ try{ S=Object.assign(S,JSON.parse(r.result)); save(); render(); toast('Дані завантажено'); }
+                 catch(err){ toast('Файл не читається'); } };
+  r.readAsText(file); e.target.value='';
+}
+
+/* ---- CoinStats CSV ---- */
+function csvRows(text){
+  const out=[];let row=[],cur='',q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else if(ch==='"') q=true;
+    else if(ch===','){ row.push(cur); cur=''; }
+    else if(ch==='\n'){ row.push(cur); out.push(row); row=[]; cur=''; }
+    else if(ch!=='\r') cur+=ch;
+  }
+  if(cur||row.length){ row.push(cur); out.push(row); }
+  return out.filter(r=>r.some(c=>c.trim()!==''));
+}
+function csvDate(s){
+  const m=String(s).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(!m) return today();
+  return m[3]+'-'+String(m[1]).padStart(2,'0')+'-'+String(m[2]).padStart(2,'0');
+}
+function csvTs(s){
+  const d=Date.parse(String(s).replace(',',''));
+  return isNaN(d)?Date.parse(csvDate(s)):d;
+}
+const DEFI_RE=/пул|pool|ревард|reward|вывел|вийшов/i;
+
+function importCsv(e){
+  const file=e.target.files[0]; if(!file)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const rows=csvRows(rd.result.replace(/^\uFEFF/,''));
+      const head=rows[0].map(h=>h.trim());
+      const col=name=>head.indexOf(name);
+      const iSym=col('Coin Symbol'), iType=col('Type'), iAmt=col('Amount'),
+            iPx=col('Price USD'), iPx2=col('Price'), iEx=col('Exchange'),
+            iDate=col('Date'), iNote=col('Notes');
+      if(iSym<0||iType<0||iAmt<0){ toast('Це не схоже на експорт CoinStats'); return; }
+      const tx=[],locs=new Set(S.locations),warn=[];
+      for(let i=1;i<rows.length;i++){
+        const r=rows[i], sym=(r[iSym]||'').trim().toUpperCase();
+        if(!sym) continue;
+        const note=(r[iNote]||'').trim();
+        const isDefi = (r[iEx]||'').trim()==='Hyperliquid' || DEFI_RE.test(note);
+        const loc = isDefi ? 'DeFi' : ((r[iEx]||'').trim() || 'Гаманець');
+        locs.add(loc);
+        // Price — у валюті пари (напр. 1 USDC = 3.8 ONDO), тому беремо лише Price USD
+        const price = n(r[iPx]) || ((r[4]||'').trim().toUpperCase()==='USD' ? n(r[iPx2]) : 0);
+        if(!price && (r[iType]||'').trim()==='Buy') warn.push(sym);
+        tx.push({id:uid(),date:csvDate(r[iDate]),ts:csvTs(r[iDate]),
+          type:(r[iType]||'').trim().toLowerCase()==='sell'?'sell':(DEFI_RE.test(note)&&/ревард|reward/i.test(note)?'reward':'buy'),
+          sym, qty:n(r[iAmt]), price, loc, note});
+      }
+      if(document.getElementById('csvReplace').checked) S.tx=tx; else S.tx=S.tx.concat(tx);
+      S.locations=[...locs];
+      save(); render();
+      toast(tx.length+' транзакцій імпортовано'+(warn.length?' · '+warn.length+' без ціни':''));
+    }catch(err){ toast('Не вдалося прочитати CSV'); }
+  };
+  rd.readAsText(file); e.target.value='';
+}
+function wipe(){
+  if(!confirm('Видалити всі дані без можливості відновити?'))return;
+  localStorage.removeItem(KEY); location.reload();
+}
+
+let tt;
+function toast(m){
+  const t=document.getElementById('toast');
+  t.textContent=m; t.classList.add('on');
+  clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('on'),2400);
+}
+
+/* ============================================================
+   8. SEED + BOOT
+   ============================================================ */
+if(!load()){
+  S.locations=['Біржа','Гаманець','DeFi'];
+  S.pools=[
+    {sym:'HYPE',pair:'USDC / HYPE',inPx:26.77,inDate:'2025-12-17',inUsdc:200,inTok:9.86,
+     outPx:94.99,outDate:'2026-09-22',outUsdc:596.21,outTok:0,
+     rUsdc:35.11,rTok:92.43,rUni:0,rTokQty:0.973,range:'15.00 – 59.99',closed:true,loc:'DeFi'},
+    {sym:'ETH',pair:'USDC / ETH',inPx:1967,inDate:'2026-02-16',inUsdc:329,inTok:0.4976,
+     outPx:1879,outDate:'2026-07-16',outUsdc:270,outTok:0.528,
+     rUsdc:45.87,rTok:45.096,rUni:0,rTokQty:'',range:'',closed:true,loc:'DeFi'},
+    {sym:'ETH',pair:'USDC / ETH',inPx:2734,inDate:'2026-01-30',inUsdc:394,inTok:0.329,
+     outPx:1991,outDate:'2026-02-16',outUsdc:0,outTok:0.49,
+     rUsdc:8.4,rTok:8.11,rUni:0,rTokQty:'',range:'',closed:true,loc:'DeFi'},
+    {sym:'HYPE',pair:'USDC / HYPE',inPx:46.5,inDate:'2025-09-05',inUsdc:147,inTok:5,
+     outPx:29.23,outDate:'2025-12-12',outUsdc:0,outTok:9.36,
+     rUsdc:17.16,rTok:12.54,rUni:15.63,rTokQty:0.51,range:'',closed:true,loc:'DeFi'},
+    {sym:'ETH',pair:'USDC / ETH',inPx:4190,inDate:'2025-10-27',inUsdc:877,inTok:0.0118,
+     outPx:2729,outDate:'2026-01-30',outUsdc:133,outTok:0.231,
+     rUsdc:40.18,rTok:35.37,rUni:2.85,rTokQty:'',range:'',closed:true,loc:'DeFi'}
+  ];
+  save();
+}
+render();
+fetchPrices();
+</script>
+</body>
+</html>
