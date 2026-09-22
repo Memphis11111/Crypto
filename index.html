@@ -69,7 +69,7 @@ input,select{font-family:inherit;font-size:inherit}
 
 /* the reconciliation strip — the one loud element */
 .recon{
-  display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:0;
+  display:grid;grid-template-columns:1fr auto 1fr auto 1fr auto 1fr;gap:0;
   border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;
   margin-top:16px;background:var(--ink-panel);
 }
@@ -80,6 +80,7 @@ input,select{font-family:inherit;font-size:inherit}
 }
 .recon .k{font-size:12px;color:var(--text-2);margin-bottom:3px}
 .recon .v{font-family:var(--mono);font-size:19px;font-weight:600}
+.recon .kk{font-size:11px;color:var(--text-3);margin-top:3px;line-height:1.3}
 @media(max-width:760px){
   .recon{grid-template-columns:1fr 1fr;}
   .recon .op{display:none}
@@ -107,6 +108,45 @@ nav button.on{color:var(--text);border-bottom-color:var(--gold)}
 .panel-bd{padding:14px 16px}
 
 /* ---------- Tables ---------- */
+
+/* ===== Asset rows (mobile-first, no horizontal scroll) ===== */
+.alist{display:flex;flex-direction:column}
+.arow{
+  display:grid;
+  grid-template-columns:38px minmax(0,1fr) auto;
+  gap:12px;align-items:center;
+  padding:12px 16px;border-bottom:1px solid var(--rule-soft);
+}
+.arow:last-child{border-bottom:none}
+.arow:hover{background:rgba(255,255,255,.02)}
+.ico{width:34px;height:34px;border-radius:50%;background:var(--ink-raised);object-fit:cover;display:block}
+.ico-f{
+  width:34px;height:34px;border-radius:50%;background:var(--ink-raised);
+  display:grid;place-items:center;font-family:var(--mono);font-size:11px;
+  color:var(--text-2);font-weight:600;border:1px solid var(--rule);
+}
+.a-main{min-width:0}
+.a-l1{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.a-sym{font-weight:700;font-size:15px;letter-spacing:.01em}
+.a-qty{font-family:var(--mono);font-size:13px;color:var(--text-2)}
+.a-l2{font-family:var(--mono);font-size:13px;color:var(--text-3);margin-top:2px}
+.a-right{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.a-pnl{font-family:var(--mono);font-size:14.5px;font-weight:600}
+.a-badge{
+  font-family:var(--mono);font-size:11.5px;font-weight:600;
+  padding:2px 8px;border-radius:6px;white-space:nowrap;
+}
+.a-badge.pos{background:rgba(95,211,166,.13);color:var(--pos)}
+.a-badge.neg{background:rgba(232,115,95,.12);color:var(--neg)}
+.a-px{font-family:var(--mono);font-size:12.5px;color:var(--text-3)}
+@media(max-width:430px){
+  .arow{grid-template-columns:32px minmax(0,1fr) auto;gap:9px;padding:11px 12px}
+  .ico,.ico-f{width:30px;height:30px}
+  .a-sym{font-size:14px}
+  .a-qty,.a-l2{font-size:12px}
+  .a-pnl{font-size:13.5px}
+  .shell{padding:0 10px}
+}
 .tw{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
 th{
@@ -218,11 +258,17 @@ dialog .dlg-ft{padding:13px 18px;border-top:1px solid var(--rule-soft);display:f
       <span class="delta num" id="totDelta"></span>
     </div>
     <div class="recon">
-      <div class="cell"><div class="k">Вкладено зараз</div><div class="v num" id="rInv">—</div></div>
+      <div class="cell"><div class="k">Заведено ззовні</div><div class="v num" id="rNet">—</div>
+        <div class="kk">свої гроші, без реінвесту</div></div>
       <div class="op">→</div>
-      <div class="cell"><div class="k">Вартість зараз</div><div class="v num" id="rVal">—</div></div>
-      <div class="op">+</div>
-      <div class="cell"><div class="k">Зафіксовано раніше</div><div class="v num" id="rReal">—</div></div>
+      <div class="cell"><div class="k">Вкладено з реінвестом</div><div class="v num" id="rInv">—</div>
+        <div class="kk">собівартість того, що на руках</div></div>
+      <div class="op">→</div>
+      <div class="cell"><div class="k">Вартість зараз</div><div class="v num" id="rVal">—</div>
+        <div class="kk" id="rDefi"></div></div>
+      <div class="op">=</div>
+      <div class="cell"><div class="k">Підсумок</div><div class="v num" id="rRes">—</div>
+        <div class="kk">від першого дня</div></div>
     </div>
   </div>
 </div>
@@ -258,7 +304,10 @@ let S={
   pxAt:null,
   cgKey:'',
   pxLog:'',
-  missing:[]
+  missing:[],
+  actual:{},
+  icons:{},
+  chg:{}
 };
 
 function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
@@ -360,7 +409,15 @@ function poolCalc(p){
     }
   }else{
     const cur=S.prices[(p.sym||'').toUpperCase()];
-    o.liveVal = cur? n(p.inUsdc)+n(p.inTok)*cur : null;
+    // для відкритого пулу беремо поточний склад позиції, якщо він заповнений
+    const haveCur = (p.curUsdc!=='' && p.curUsdc!=null) || (p.curTok!=='' && p.curTok!=null);
+    if(cur!==undefined && haveCur){
+      o.liveVal = n(p.curUsdc)+n(p.curTok)*cur;
+      o.unclaimed = n(p.rUsdcQty)+n(p.rTokQty)*cur;
+    }else if(cur!==undefined){
+      o.liveVal = n(p.inUsdc)+n(p.inTok)*cur;
+      o.unclaimed = 0;
+    }else{ o.liveVal=null; o.unclaimed=0; }
   }
   return o;
 }
@@ -374,15 +431,30 @@ function totals(){
     inv += h.cost;
     real += h.realized;
   }
-  // open pools add their live value; closed pools' profit counts as realized
-  let poolVal=0, poolReal=0, poolIn=0;
+  // Чисто заведено ззовні: угоди за фіат (ext), без внутрішніх обмінів
+  let net=0;
+  for(const t of S.tx){
+    if(!t.ext) continue;
+    const v=n(t.qty)*n(t.price);
+    net += (t.type==='sell') ? -v : v;
+  }
+
+  // Активи, що лежать у відкритих пулах, — це ті самі монети, які вже
+  // пораховані у споті (звірка вирівнює кількості). Тому їх не додаємо,
+  // а показуємо окремо як частину загального. Незабрані реварди — додаємо.
+  let inDefi=0, poolReal=0, unclaimed=0;
   for(const p of S.pools){
     const c=poolCalc(p);
     if(p.closed){ poolReal += c.profit; }
-    else if(c.liveVal!==null){ poolVal += c.liveVal; poolIn += c.sumIn; }
+    else{
+      if(c.liveVal!==null) inDefi += c.liveVal;
+      unclaimed += c.unclaimed||0;
+    }
   }
-  return {H,val,inv,real,poolVal,poolReal,poolIn,
-          totalVal:val+poolVal, totalInv:inv+poolIn, totalReal:real+poolReal};
+  const totalVal=val+unclaimed;
+  return {H,val,inv,real,inDefi,poolReal,unclaimed,net,
+          totalVal, totalInv:inv, totalReal:real+poolReal,
+          result: totalVal-net};
 }
 
 /* ============================================================
@@ -404,7 +476,7 @@ async function fetchPrices(){
   need.forEach(s=>{ if(got[s]===undefined){ const id=cgId(s); if(id) map[id]=s; } });
   const ids=Object.keys(map);
   if(ids.length){
-    let url='https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=usd';
+    let url='https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&per_page=250&ids='+ids.join(',');
     if(S.cgKey) url+='&x_cg_demo_api_key='+encodeURIComponent(S.cgKey);
     try{
       const r=await fetch(url);
@@ -412,7 +484,13 @@ async function fetchPrices(){
       else if(!r.ok) log.push('CoinGecko: помилка '+r.status);
       else{
         const d=await r.json(); let k=0;
-        for(const id in d){ if(map[id]&&d[id].usd!==undefined){ got[map[id]]=d[id].usd; k++; } }
+        S.icons=S.icons||{};
+        d.forEach(c=>{
+          const s=map[c.id]; if(!s) return;
+          if(c.current_price!==null&&c.current_price!==undefined){ got[s]=c.current_price; k++; }
+          if(c.image) S.icons[s]=c.image;
+          if(c.price_change_percentage_24h!=null){ (S.chg=S.chg||{})[s]=c.price_change_percentage_24h; }
+        });
         log.push('CoinGecko: '+k+' цін');
       }
     }catch(e){ log.push('CoinGecko: запит заблоковано (мережа або розширення браузера)'); }
@@ -463,20 +541,51 @@ function go(t){ S.tab=t; save(); render(); window.scrollTo(0,0); }
 
 function renderHero(){
   const T=totals();
-  const unreal=T.totalVal-T.totalInv;
-  const pl=unreal+T.totalReal;
   const hasAny = S.tx.length || S.pools.length;
   document.getElementById('totVal').textContent = T.totalVal>0?usd(T.totalVal):(hasAny?'$0.00':'—');
-  const pct = T.totalInv>0 ? pl/T.totalInv*100 : null;
+  const pct = T.net>0 ? T.result/T.net*100 : null;
   document.getElementById('totDelta').innerHTML =
-    hasAny && pl!==0 ? `<span class="${k(pl)}">${sgn(pl)} ${pct!==null?'('+pctS(pct)+')':''}</span>` : '';
-  document.getElementById('rInv').textContent  = usd(T.totalInv);
-  document.getElementById('rVal').innerHTML    = T.totalVal>0
-      ? `<span class="${k(unreal)}">${usd(T.totalVal)}</span>` : `<span class="faint">${usd(T.totalVal)}</span>`;
-  document.getElementById('rReal').innerHTML   = T.totalReal!==0
-      ? `<span class="${k(T.totalReal)}">${sgn(T.totalReal)}</span>` : `<span class="faint">$0.00</span>`;
+    (hasAny && T.net>0) ? `<span class="${k(T.result)}">${sgn(T.result)} ${pct!==null?'('+pctS(pct)+')':''}</span>` : '';
+
+  document.getElementById('rNet').innerHTML = T.net>0?usd(T.net):'<span class="faint">—</span>';
+  document.getElementById('rInv').textContent = usd(T.totalInv);
+  document.getElementById('rVal').innerHTML = T.totalVal>0
+      ? usd(T.totalVal) : `<span class="faint">${usd(T.totalVal)}</span>`;
+  document.getElementById('rDefi').textContent = T.inDefi? 'з них у DeFi '+usd(T.inDefi) : '';
+  document.getElementById('rRes').innerHTML = T.net>0
+      ? `<span class="${k(T.result)}">${sgn(T.result)}</span>` : '<span class="faint">—</span>';
+
   const info=document.getElementById('pxInfo');
   info.textContent = S.pxAt ? 'ціни оновлені '+new Date(S.pxAt).toLocaleString('uk-UA',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : 'ціни не завантажені';
+}
+
+
+/* ---------- Asset row ---------- */
+function icoHtml(sym){
+  const u=(S.icons||{})[sym];
+  return u ? `<img class="ico" src="${esc(u)}" alt="" loading="lazy"
+               onerror="this.outerHTML='<div class=\'ico-f\'>${esc(sym.slice(0,3))}</div>'">`
+           : `<div class="ico-f">${esc(sym.slice(0,3))}</div>`;
+}
+function assetRow(h){
+  const px=S.prices[h.sym];
+  const val=px!==undefined?h.qty*px:null;
+  const avg=h.qty>0?h.cost/h.qty:0;
+  const u=val!==null?val-h.cost:null;
+  const pc=(u!==null&&h.cost>0)?u/h.cost*100:null;
+  return `<div class="arow">
+    ${icoHtml(h.sym)}
+    <div class="a-main">
+      <div class="a-l1"><span class="a-sym">${h.sym}</span><span class="a-qty">${qf(h.qty)}</span></div>
+      <div class="a-l2">${val!==null?usd(val):'—'}</div>
+    </div>
+    <div class="a-right">
+      ${u!==null?`<span class="a-pnl ${k(u)}">${sgn(u)}</span>
+        ${pc!==null?`<span class="a-badge ${k(u)}">${u>=0?'▲':'▼'} ${f(Math.abs(pc),2)}%</span>`:''}`
+        :'<span class="a-pnl faint">—</span>'}
+      <span class="a-px">${px!==undefined?usd(px,px<1?4:2):'ціни немає'}</span>
+    </div>
+  </div>`;
 }
 
 /* ---------- Overview ---------- */
@@ -487,7 +596,7 @@ function vOverview(){
     .map(h=>{const px=S.prices[h.sym];return {...h,px,val:px!==undefined?h.qty*px:null};})
     .sort((a,b)=>(b.val??-1)-(a.val??-1));
   const known=rows.filter(r=>r.val!==null);
-  const totKnown=known.reduce((s,r)=>s+r.val,0)+T.poolVal;
+  const totKnown=known.reduce((s,r)=>s+r.val,0);
 
   if(!S.tx.length && !S.pools.length) return emptyStart();
 
@@ -495,7 +604,7 @@ function vOverview(){
   const locVal={};
   for(const r of rows){ if(r.val===null)continue;
     for(const L in r.byLoc){ const q=r.byLoc[L]; if(q>1e-12) locVal[L]=(locVal[L]||0)+q*r.px; } }
-  for(const p of S.pools){ if(!p.closed){ const c=poolCalc(p); if(c.liveVal) locVal[p.loc||'DeFi']=(locVal[p.loc||'DeFi']||0)+c.liveVal; } }
+  for(const p of S.pools){ if(!p.closed){ const c=poolCalc(p); if(c.unclaimed) locVal[p.loc||'DeFi']=(locVal[p.loc||'DeFi']||0)+c.unclaimed; } }
 
   const unreal=T.totalVal-T.totalInv;
 
@@ -520,28 +629,17 @@ function vOverview(){
         <div class="stat"><div class="k">Спот — вартість</div><div class="v num">${usd(T.val)}</div><div class="s">вкладено ${usd(T.inv)}</div></div>
         <div class="stat"><div class="k">Спот — незафіксований</div><div class="v num ${k(T.val-T.inv)}">${sgn(T.val-T.inv)}</div></div>
         <div class="stat"><div class="k">Спот — зафіксований</div><div class="v num ${k(T.real)}">${sgn(T.real)}</div><div class="s">з продажів</div></div>
-        <div class="stat"><div class="k">DeFi — відкриті пули</div><div class="v num">${T.poolVal?usd(T.poolVal):'—'}</div></div>
+        <div class="stat"><div class="k">З них у DeFi-пулах</div><div class="v num">${T.inDefi?usd(T.inDefi):'—'}</div><div class="s">частина спота, не додається зверху</div></div>
+        <div class="stat"><div class="k">Незабрані реварди</div><div class="v num ${T.unclaimed?'pos':''}">${T.unclaimed?usd(T.unclaimed):'—'}</div><div class="s">ще в пулі</div></div>
         <div class="stat"><div class="k">DeFi — закриті пули</div><div class="v num ${k(T.poolReal)}">${sgn(T.poolReal)}</div><div class="s">підсумковий результат</div></div>
-        <div class="stat"><div class="k">Разом P/L</div><div class="v num ${k(unreal+T.totalReal)}">${sgn(unreal+T.totalReal)}</div></div>
+        <div class="stat"><div class="k">Підсумок від початку</div><div class="v num ${k(T.result)}">${sgn(T.result)}</div><div class="s">вартість мінус заведене</div></div>
       </div>
     </div>
   </div>
 
   <div class="panel">
     <div class="panel-hd"><h2>Найбільші позиції</h2><span class="note">${known.length} з ${rows.length} активів мають ціну</span></div>
-    <div class="tw"><table>
-      <thead><tr><th>Актив</th><th>Кількість</th><th>Ціна</th><th>Вартість</th><th>Частка</th><th>Незафіксований</th></tr></thead>
-      <tbody>${rows.slice(0,12).map(r=>{
-        const u = r.val!==null ? r.val-r.cost : null;
-        return `<tr>
-          <td><span class="sym">${r.sym}</span></td>
-          <td class="num">${qf(r.qty)}</td>
-          <td class="num dim">${r.px!==undefined?usd(r.px,r.px<1?4:2):'—'}</td>
-          <td class="num">${r.val!==null?usd(r.val):'—'}</td>
-          <td class="num faint">${r.val!==null&&totKnown>0?f(r.val/totKnown*100,1)+'%':'—'}</td>
-          <td class="num ${u!==null?k(u):''}">${u!==null?sgn(u):'—'}</td>
-        </tr>`;}).join('') || '<tr><td colspan="6" class="faint">Активів ще немає</td></tr>'}</tbody>
-    </table></div>
+    <div class="alist">${rows.slice(0,12).map(assetRow).join('') || '<div class="empty">Активів ще немає</div>'}</div>
   </div>
 
   <div class="panel">
@@ -576,18 +674,61 @@ function vAssets(){
   const rows=Object.values(H).sort((a,b)=>{
     const av=(S.prices[a.sym]??0)*a.qty, bv=(S.prices[b.sym]??0)*b.qty; return bv-av;
   });
+  const live=rows.filter(h=>h.qty>1e-9);
   const bad=rows.filter(h=>h.negative);
+  const noPx=live.filter(h=>S.prices[h.sym]===undefined);
+
   return `
   ${bad.length?`<div class="panel" style="border-color:rgba(232,115,95,.45)">
     <div class="panel-bd" style="display:flex;gap:12px;align-items:flex-start">
       <span style="color:var(--neg);font-size:18px;line-height:1.2">!</span>
       <div><b>Продано більше, ніж було на балансі:</b> ${bad.map(h=>h.sym+' ('+qf(h.qty)+')').join(', ')}.
       <div class="faint" style="font-size:13px;margin-top:3px">
-        Найчастіша причина — продаж внесений, а початковий залишок ні. Додай купівлю нижче, і баланс зійдеться.</div></div>
+        Найчастіша причина — продаж внесений, а початковий залишок ні.</div></div>
     </div></div>`:''}
+
   <div class="panel">
-    <div class="panel-hd"><h2>Внести те, що вже є</h2>
-      <span class="note">один рядок на актив — кількість і середня ціна купівлі</span></div>
+    <div class="panel-hd"><h2>Активи</h2><div class="grow"></div>
+      <button class="btn sm" onclick="fetchPrices()">Оновити ціни</button></div>
+    <div class="alist">${live.map(assetRow).join('') || '<div class="empty">Ще нічого немає</div>'}</div>
+    ${noPx.length?`<div class="panel-bd" style="border-top:1px solid var(--rule-soft)">
+      <p class="faint" style="font-size:13px;margin:0 0 7px">Без ціни — постав вручну:</p>
+      ${noPx.map(h=>`<button class="btn sm quiet" onclick="setPx('${h.sym}')">${h.sym}</button>`).join(' ')}
+    </div>`:''}
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Звірка з гаманцем і біржею</h2>
+      <span class="note">фактична кількість — разом із тим, що в пулах</span></div>
+    <div class="alist">${live.map(h=>{
+      const act=(S.actual||{})[h.sym];
+      const has=act!==undefined&&act!==''&&act!==null;
+      const diff=has?n(act)-h.qty:null;
+      const off=diff!==null&&Math.abs(diff)>Math.max(1e-6,Math.abs(h.qty)*0.0005);
+      return `<div class="arow" style="grid-template-columns:34px minmax(0,1fr) auto">
+        ${icoHtml(h.sym)}
+        <div class="a-main">
+          <div class="a-l1"><span class="a-sym">${h.sym}</span></div>
+          <div class="a-l2">у трекері ${qf(h.qty)}</div>
+          ${off?`<div class="a-l2 ${k(diff)}" style="margin-top:3px">різниця ${diff>=0?'+':''}${qf(diff)}</div>`:''}
+        </div>
+        <div class="a-right" style="gap:6px">
+          <input type="number" step="any" value="${has?act:''}" onchange="setActual('${h.sym}',this.value)"
+            placeholder="фактично" style="width:132px;background:var(--ink-base);border:1px solid ${off?'var(--neg)':'var(--rule)'};
+            color:var(--text);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;text-align:right">
+          ${off?`<button class="btn sm" onclick="alignQty('${h.sym}')">Вирівняти</button>`:''}
+        </div>
+      </div>`;}).join('')}</div>
+    <div class="panel-bd" style="border-top:1px solid var(--rule-soft)">
+      <p class="faint" style="font-size:13px;margin:0">
+        «Вирівняти» додасть коригувальний запис на різницю. Для нових монет собівартість
+        візьметься за поточною ціною — поправ у «Транзакціях», якщо знаєш реальну.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Додати актив вручну</h2>
+      <span class="note">кількість і середня ціна купівлі</span></div>
     <div class="panel-bd">
       <div class="form">
         <div class="f"><label>Актив</label><input id="oSym" placeholder="ETH" style="text-transform:uppercase"></div>
@@ -598,33 +739,9 @@ function vAssets(){
         <div class="f"><button class="btn gold" onclick="addOpening()" style="width:100%">Додати</button></div>
       </div>
     </div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-hd"><h2>Активи</h2><div class="grow"></div>
-      <button class="btn sm" onclick="fetchPrices()">Оновити ціни</button></div>
-    <div class="tw"><table>
-      <thead><tr><th>Актив</th><th>Кількість</th><th>Сер. купівля</th><th>Ціна зараз</th>
-      <th>Вкладено</th><th>Вартість</th><th>Незафікс.</th><th>Зафікс.</th><th></th></tr></thead>
-      <tbody>${rows.map(h=>{
-        const px=S.prices[h.sym], val=px!==undefined?h.qty*px:null;
-        const avg=h.qty>0?h.cost/h.qty:0, u=val!==null?val-h.cost:null;
-        return `<tr>
-          <td><span class="sym">${h.sym}</span>${cgId(h.sym)?'':' <span class="chip">нема ціни</span>'}</td>
-          <td class="num">${qf(h.qty)}</td>
-          <td class="num dim">${avg>0?usd(avg,avg<1?4:2):'—'}</td>
-          <td class="num">${px!==undefined?usd(px,px<1?4:2):'—'}</td>
-          <td class="num dim">${usd(h.cost)}</td>
-          <td class="num">${val!==null?usd(val):'—'}</td>
-          <td class="num ${u!==null?k(u):''}">${u!==null?sgn(u):'—'}</td>
-          <td class="num ${k(h.realized)}">${h.realized?sgn(h.realized):'—'}</td>
-          <td><button class="btn sm quiet" onclick="setPx('${h.sym}')">ціна</button></td>
-        </tr>`;}).join('') || '<tr><td colspan="9" class="faint">Ще нічого немає</td></tr>'}</tbody>
-    </table></div>
   </div>`;
 }
 
-/* ---------- Transactions ---------- */
 function vTx(){
   const rows=[...S.tx].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   return `
@@ -641,6 +758,8 @@ function vTx(){
         <div class="f"><label>Місце</label><select id="tLoc">${S.locations.map(l=>`<option>${esc(l)}</option>`).join('')}</select></div>
         <div class="f"><label>Дата</label><input id="tDate" type="date" value="${today()}"></div>
         <div class="f"><label>Нотатка</label><input id="tNote" placeholder="необов'язково" style="font-family:var(--sans)"></div>
+        <div class="f"><label>Джерело грошей</label>
+          <select id="tExt"><option value="1">Свої гроші ззовні</option><option value="0">Обмін усередині</option></select></div>
         <div class="f"><button class="btn gold" onclick="addTx()" style="width:100%">Додати</button></div>
       </div>
     </div>
@@ -659,7 +778,7 @@ function vTx(){
           <td class="num ${t.type==='sell'?'neg':'pos'}">${t.type==='sell'?'−':'+'}${qf(n(t.qty))}</td>
           <td class="num dim">${usd(n(t.price),n(t.price)<1?4:2)}</td>
           <td class="num">${usd(n(t.qty)*n(t.price))}</td>
-          <td class="faint">${esc(t.loc||'—')}</td>
+          <td class="faint">${esc(t.loc||'—')}${t.ext?' <span class="chip">фіат</span>':''}</td>
           <td><button class="btn sm quiet danger" onclick="delTx('${t.id}')">×</button></td>
         </tr>`).join('') || '<tr><td colspan="8" class="faint">Порожньо</td></tr>'}</tbody>
     </table></div>
@@ -720,13 +839,30 @@ function poolCard(p,i){
 }
 
 function poolOpen(p,c){
-  return `<div class="stats">
-    <div class="stat"><div class="k">Вкладено</div><div class="v num">${usd(c.sumIn)}</div></div>
-    <div class="stat"><div class="k">Вартість зараз</div><div class="v num">${c.liveVal!==null?usd(c.liveVal):'—'}</div>
-      <div class="s">${c.liveVal===null?'потрібна ціна активу':''}</div></div>
-    <div class="stat"><div class="k">Реварди зібрано</div><div class="v num">${usd(c.rewards)}</div></div>
+  const i=S.pools.indexOf(p), sym=(p.sym||'').toUpperCase();
+  return `
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:14px">
+    <div class="leg"><h4>Зараз у пулі</h4>
+      <div class="kv">
+        <label>USDC</label><input type="number" step="any" value="${p.curUsdc??''}" onchange="setPool(${i},'curUsdc',this.value)" placeholder="805.65">
+        <label>${sym||'Токен'}</label><input type="number" step="any" value="${p.curTok??''}" onchange="setPool(${i},'curTok',this.value)" placeholder="0.2927">
+      </div>
+    </div>
+    <div class="leg"><h4>Незабрані реварди</h4>
+      <div class="kv">
+        <label>USDC</label><input type="number" step="any" value="${p.rUsdcQty??''}" onchange="setPool(${i},'rUsdcQty',this.value)" placeholder="64.97">
+        <label>${sym||'Токен'}</label><input type="number" step="any" value="${p.rTokQty??''}" onchange="setPool(${i},'rTokQty',this.value)" placeholder="0.0314">
+      </div>
+    </div>
   </div>
-  <div class="callout">Поки пул відкритий, це орієнтовна вартість позиції за поточною ціною — без урахування того, як пул перерозподілив токени всередині діапазону.</div>`;
+  <div class="stats">
+    <div class="stat"><div class="k">Вкладено на вході</div><div class="v num">${c.sumIn?usd(c.sumIn):'—'}</div></div>
+    <div class="stat"><div class="k">У пулі зараз</div><div class="v num">${c.liveVal!==null?usd(c.liveVal):'—'}</div>
+      <div class="s">${c.liveVal===null?'заповни склад і онови ціни':''}</div></div>
+    <div class="stat"><div class="k">Незабрані реварди</div><div class="v num ${c.unclaimed?'pos':''}">${c.unclaimed?usd(c.unclaimed):'—'}</div></div>
+    <div class="stat"><div class="k">Разом позиція</div><div class="v num">${c.liveVal!==null?usd(c.liveVal+(c.unclaimed||0)):'—'}</div></div>
+  </div>
+  <div class="callout">Монети, що лежать у пулі, вже пораховані серед активів — тут вони показані окремо, щоб було видно, яка частина портфеля працює в DeFi. Незабрані реварди додаються до загальної суми.</div>`;
 }
 
 function poolClosed(p,c,i){
@@ -858,14 +994,14 @@ function addOpening(){
   const sym=val('oSym').trim().toUpperCase(), qty=n(val('oQty')), px=n(val('oPx'));
   if(!sym||!qty){ toast('Потрібні актив і кількість'); return; }
   const d1=val('oDate')||today();
-  S.tx.push({id:uid(),date:d1,ts:Date.parse(d1),type:'buy',sym,qty,price:px,loc:val('oLoc'),note:'початковий залишок'});
+  S.tx.push({id:uid(),date:d1,ts:Date.parse(d1),type:'buy',sym,qty,price:px,loc:val('oLoc'),note:'початковий залишок',ext:true});
   save(); render(); toast(sym+' додано');
 }
 function addTx(){
   const sym=val('tSym').trim().toUpperCase(), qty=n(val('tQty'));
   if(!sym||!qty){ toast('Потрібні актив і кількість'); return; }
   const d2=val('tDate')||today();
-  S.tx.push({id:uid(),date:d2,ts:Date.parse(d2),type:val('tType'),sym,qty,price:n(val('tPx')),loc:val('tLoc'),note:val('tNote')});
+  S.tx.push({id:uid(),date:d2,ts:Date.parse(d2),type:val('tType'),sym,qty,price:n(val('tPx')),loc:val('tLoc'),note:val('tNote'),ext:val('tExt')==='1'});
   save(); render(); toast('Записано');
 }
 function delTx(id){ S.tx=S.tx.filter(t=>t.id!==id); save(); render(); }
@@ -889,13 +1025,13 @@ function pushPool(i){
   const made=[];
   if(c.qtyMoved>0){
     S.tx.push({id:uid(),date:d,ts:Date.parse(d),type:c.dir==='sell'?'sell':'buy',sym,qty:+c.qtyMoved.toFixed(8),
-               price:+c.eff.toFixed(6),loc:p.loc||'DeFi',note:'пул '+(p.pair||'USDC/'+sym)});
+               price:+c.eff.toFixed(6),loc:p.loc||'DeFi',note:'пул '+(p.pair||'USDC/'+sym),ext:false});
     made.push((c.dir==='sell'?'продаж ':'купівля ')+qf(c.qtyMoved)+' '+sym);
   }
   if(n(p.rTokQty)>0){
     const rp = n(p.rTok)>0 ? n(p.rTok)/n(p.rTokQty) : 0;
     S.tx.push({id:uid(),date:d,ts:Date.parse(d)+1,type:'reward',sym,qty:n(p.rTokQty),price:+rp.toFixed(6),
-               loc:p.loc||'DeFi',note:'реварди пулу'});
+               loc:p.loc||'DeFi',note:'реварди пулу',ext:false});
     made.push('реварди '+qf(n(p.rTokQty))+' '+sym);
   }
   p.pushed=true; save(); render();
@@ -909,6 +1045,27 @@ function addLoc(){
 }
 function delLoc(i){ S.locations.splice(i,1); save(); render(); }
 
+function setActual(sym,v){
+  S.actual=S.actual||{};
+  if(v===''||v===null) delete S.actual[sym]; else S.actual[sym]=n(v);
+  save(); render();
+}
+function alignQty(sym){
+  const h=holdings()[sym]; if(!h) return;
+  const act=n((S.actual||{})[sym]);
+  const diff=act-h.qty;
+  if(Math.abs(diff)<1e-9) return;
+  const d=today(), px=S.prices[sym];
+  if(diff>0){
+    S.tx.push({id:uid(),date:d,ts:Date.parse(d)+2,type:'buy',sym,qty:+diff.toFixed(8),
+               price:px!==undefined?px:0,loc:'Гаманець',note:'коригування за фактом',ext:false});
+  }else{
+    const avg=h.qty>0?h.cost/h.qty:0;
+    S.tx.push({id:uid(),date:d,ts:Date.parse(d)+2,type:'sell',sym,qty:+(-diff).toFixed(8),
+               price:+avg.toFixed(6),loc:'Гаманець',note:'коригування за фактом (без прибутку)',ext:false});
+  }
+  save(); render(); toast(sym+': вирівняно на '+qf(Math.abs(diff)));
+}
 function setPx(sym){
   const cur=S.prices[sym]??'';
   const v=prompt('Ціна '+sym+' у доларах:',cur);
@@ -974,7 +1131,7 @@ function importCsv(e){
       const col=name=>head.indexOf(name);
       const iSym=col('Coin Symbol'), iType=col('Type'), iAmt=col('Amount'),
             iPx=col('Price USD'), iPx2=col('Price'), iEx=col('Exchange'),
-            iDate=col('Date'), iNote=col('Notes');
+            iDate=col('Date'), iNote=col('Notes'), iPair=col('Pair');
       if(iSym<0||iType<0||iAmt<0){ toast('Це не схоже на експорт CoinStats'); return; }
       const tx=[],locs=new Set(S.locations),warn=[];
       for(let i=1;i<rows.length;i++){
@@ -989,7 +1146,8 @@ function importCsv(e){
         if(!price && (r[iType]||'').trim()==='Buy') warn.push(sym);
         tx.push({id:uid(),date:csvDate(r[iDate]),ts:csvTs(r[iDate]),
           type:(r[iType]||'').trim().toLowerCase()==='sell'?'sell':(DEFI_RE.test(note)&&/ревард|reward/i.test(note)?'reward':'buy'),
-          sym, qty:n(r[iAmt]), price, loc, note});
+          sym, qty:n(r[iAmt]), price, loc, note,
+          ext:(r[iPair]||'').trim().toUpperCase()==='USD'});
       }
       if(document.getElementById('csvReplace').checked) S.tx=tx; else S.tx=S.tx.concat(tx);
       S.locations=[...locs];
