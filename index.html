@@ -255,7 +255,10 @@ let S={
   pools:[],     // defi positions
   ids:{},       // sym -> coingecko id override
   prices:{},    // sym -> usd
-  pxAt:null
+  pxAt:null,
+  cgKey:'',
+  pxLog:'',
+  missing:[]
 };
 
 function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
@@ -277,7 +280,9 @@ const CG={
   UMA:'uma',LINK:'chainlink',ONDO:'ondo-finance',TAO:'bittensor',
   INJ:'injective-protocol',JUP:'jupiter-exchange-solana',PEPE:'pepe',
   WIF:'dogwifcoin',BONK:'bonk',AVAX:'avalanche-2',TIA:'celestia',
-  ENA:'ethena',RNDR:'render-token',MATIC:'matic-network'
+  ENA:'ethena',RNDR:'render-token',MATIC:'matic-network',
+  EOS:'eos',CHZ:'chiliz',STX:'blockstack',MX:'mx-token',QLC:'qlink',
+  PROS:'prosper',BSW:'biswap',QMALL:'qmall'
 };
 const cgId = s => S.ids[s] || CG[s.toUpperCase()] || null;
 
@@ -385,24 +390,54 @@ function totals(){
    ============================================================ */
 async function fetchPrices(){
   const syms=new Set();
-  Object.keys(holdings()).forEach(s=>syms.add(s));
+  Object.entries(holdings()).forEach(([s,h])=>{ if(h.qty>1e-9) syms.add(s); });
   S.pools.forEach(p=>{ if(p.sym) syms.add(p.sym.toUpperCase()); });
+  if(!syms.size){ toast('Нема активів для оновлення'); return; }
+
+  const need=[...syms];
+  const got={}, log=[];
+  // стейбли не питаємо
+  need.forEach(s=>{ if(s==='USDC'||s==='USDT'||s==='DAI') got[s]=1; });
+
+  // --- джерело 1: CoinGecko ---
   const map={};
-  syms.forEach(s=>{ const id=cgId(s); if(id) map[id]=s; });
+  need.forEach(s=>{ if(got[s]===undefined){ const id=cgId(s); if(id) map[id]=s; } });
   const ids=Object.keys(map);
-  if(!ids.length){ toast('Нема активів для оновлення'); return; }
-  toast('Завантажую ціни…');
-  try{
-    const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=usd');
-    if(!r.ok) throw new Error(r.status);
-    const d=await r.json();
-    let got=0;
-    for(const id in d){ if(map[id] && d[id].usd!==undefined){ S.prices[map[id]]=d[id].usd; got++; } }
-    S.pxAt=Date.now(); save(); render();
-    toast(got+' з '+ids.length+' цін оновлено');
-  }catch(e){
-    toast('CoinGecko не відповів. Постав ціну вручну в «Активах».');
+  if(ids.length){
+    let url='https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=usd';
+    if(S.cgKey) url+='&x_cg_demo_api_key='+encodeURIComponent(S.cgKey);
+    try{
+      const r=await fetch(url);
+      if(r.status===429) log.push('CoinGecko: перевищено ліміт запитів (429)');
+      else if(!r.ok) log.push('CoinGecko: помилка '+r.status);
+      else{
+        const d=await r.json(); let k=0;
+        for(const id in d){ if(map[id]&&d[id].usd!==undefined){ got[map[id]]=d[id].usd; k++; } }
+        log.push('CoinGecko: '+k+' цін');
+      }
+    }catch(e){ log.push('CoinGecko: запит заблоковано (мережа або розширення браузера)'); }
   }
+
+  // --- джерело 2: Coinbase, добираємо те, чого бракує ---
+  const miss=need.filter(s=>got[s]===undefined);
+  if(miss.length){
+    try{
+      const r=await fetch('https://api.coinbase.com/v2/exchange-rates?currency=USD');
+      if(r.ok){
+        const rates=(await r.json()).data.rates; let k=0;
+        miss.forEach(s=>{ const v=parseFloat(rates[s]); if(v>0){ got[s]=1/v; k++; } });
+        if(k) log.push('Coinbase: '+k+' цін');
+      }else log.push('Coinbase: помилка '+r.status);
+    }catch(e){ log.push('Coinbase: запит заблоковано'); }
+  }
+
+  const found=Object.keys(got).length;
+  Object.assign(S.prices,got);
+  S.missing=need.filter(s=>got[s]===undefined);
+  S.pxLog=log.join(' · ');
+  if(found){ S.pxAt=Date.now(); }
+  save(); render();
+  toast(found?('Оновлено '+found+' з '+need.length+' цін'):'Жодне джерело не відповіло — див. вкладку «Дані»');
 }
 
 /* ============================================================
@@ -782,7 +817,25 @@ function vData(){
   </div>
 
   <div class="panel">
-    <div class="panel-hd"><h2>Ціни</h2><span class="note">якщо монети немає в CoinGecko — постав ціну вручну</span></div>
+    <div class="panel-hd"><h2>Ціни</h2><span class="note">джерела: CoinGecko, далі Coinbase</span></div>
+    <div class="panel-bd">
+      ${S.pxLog?`<p style="font-size:13.5px;margin:0 0 12px"><span class="dim">Останнє оновлення:</span> ${esc(S.pxLog)}</p>`:''}
+      ${(S.missing&&S.missing.length)?`<p style="font-size:13.5px;margin:0 0 12px;color:var(--neg)">
+        Без ціни: ${S.missing.map(esc).join(', ')} — постав вручну в «Активах» або впиши ID нижче.</p>`:''}
+      <div class="form" style="grid-template-columns:1fr auto">
+        <div class="f"><label>Ключ CoinGecko Demo (безкоштовний, знімає ліміт запитів)</label>
+          <input id="cgKey" value="${esc(S.cgKey||'')}" placeholder="CG-xxxxxxxx" style="font-family:var(--sans)"></div>
+        <div class="f"><button class="btn" onclick="saveKey()">Зберегти</button></div>
+      </div>
+      <p class="faint" style="font-size:13px;margin:8px 0 0">
+        Якщо ціни не вантажаться — найчастіше це ліміт запитів CoinGecko.
+        Ключ береться безкоштовно на coingecko.com/en/api/pricing → Create Free Account → Developer's Dashboard → API Keys.
+      </p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Свої ID монет</h2><span class="note">якщо монету не знайдено автоматично</span></div>
     <div class="panel-bd">
       <div class="form" style="grid-template-columns:1fr 1fr auto">
         <div class="f"><label>Актив</label><input id="idSym" placeholder="HYPE" style="text-transform:uppercase"></div>
@@ -861,6 +914,10 @@ function setPx(sym){
   const v=prompt('Ціна '+sym+' у доларах:',cur);
   if(v===null)return;
   S.prices[sym]=n(v); S.pxAt=Date.now(); save(); render();
+}
+function saveKey(){
+  S.cgKey=val('cgKey').trim(); save(); render();
+  toast(S.cgKey?'Ключ збережено':'Ключ прибрано');
 }
 function setId(){
   const s=val('idSym').trim().toUpperCase(), v=val('idVal').trim();
