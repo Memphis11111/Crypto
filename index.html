@@ -532,10 +532,12 @@ const TABS=[
 
 function render(){
   document.getElementById('nav').innerHTML =
-    TABS.map(([id,t])=>`<button class="${S.tab===id?'on':''}" onclick="go('${id}')">${t}</button>`).join('');
+    TABS.map(([id,t])=>`<button class="${S.tab===id||(id==='assets'&&S.tab.startsWith('asset:'))?'on':''}" onclick="go('${id}')">${t}</button>`).join('');
   renderHero();
   const v=document.getElementById('view');
-  v.innerHTML = ({overview:vOverview,assets:vAssets,tx:vTx,defi:vDefi,places:vPlaces,data:vData})[S.tab]();
+  v.innerHTML = S.tab.startsWith('asset:')
+    ? vAsset()
+    : ({overview:vOverview,assets:vAssets,tx:vTx,defi:vDefi,places:vPlaces,data:vData})[S.tab]();
 }
 function go(t){ S.tab=t; save(); render(); window.scrollTo(0,0); }
 
@@ -573,7 +575,7 @@ function assetRow(h){
   const avg=h.qty>0?h.cost/h.qty:0;
   const u=val!==null?val-h.cost:null;
   const pc=(u!==null&&h.cost>0)?u/h.cost*100:null;
-  return `<div class="arow">
+  return `<div class="arow" onclick="go('asset:${h.sym}')" style="cursor:pointer">
     ${icoHtml(h.sym)}
     <div class="a-main">
       <div class="a-l1"><span class="a-sym">${h.sym}</span><span class="a-qty">${qf(h.qty)}</span></div>
@@ -680,50 +682,16 @@ function vAssets(){
 
   return `
   ${bad.length?`<div class="panel" style="border-color:rgba(232,115,95,.45)">
-    <div class="panel-bd" style="display:flex;gap:12px;align-items:flex-start">
-      <span style="color:var(--neg);font-size:18px;line-height:1.2">!</span>
-      <div><b>Продано більше, ніж було на балансі:</b> ${bad.map(h=>h.sym+' ('+qf(h.qty)+')').join(', ')}.
-      <div class="faint" style="font-size:13px;margin-top:3px">
-        Найчастіша причина — продаж внесений, а початковий залишок ні.</div></div>
-    </div></div>`:''}
+    <div class="panel-bd"><b>Мінусовий баланс:</b> ${bad.map(h=>h.sym+' ('+qf(h.qty)+')').join(', ')}</div></div>`:''}
 
   <div class="panel">
-    <div class="panel-hd"><h2>Активи</h2><div class="grow"></div>
-      <button class="btn sm" onclick="fetchPrices()">Оновити ціни</button></div>
+    <div class="panel-hd"><h2>Активи</h2><span class="note">${live.length} шт · натисни, щоб відкрити</span>
+      <div class="grow"></div><button class="btn sm" onclick="fetchPrices()">Оновити ціни</button></div>
     <div class="alist">${live.map(assetRow).join('') || '<div class="empty">Ще нічого немає</div>'}</div>
     ${noPx.length?`<div class="panel-bd" style="border-top:1px solid var(--rule-soft)">
       <p class="faint" style="font-size:13px;margin:0 0 7px">Без ціни — постав вручну:</p>
       ${noPx.map(h=>`<button class="btn sm quiet" onclick="setPx('${h.sym}')">${h.sym}</button>`).join(' ')}
     </div>`:''}
-  </div>
-
-  <div class="panel">
-    <div class="panel-hd"><h2>Звірка з гаманцем і біржею</h2>
-      <span class="note">фактична кількість — разом із тим, що в пулах</span></div>
-    <div class="alist">${live.map(h=>{
-      const act=(S.actual||{})[h.sym];
-      const has=act!==undefined&&act!==''&&act!==null;
-      const diff=has?n(act)-h.qty:null;
-      const off=diff!==null&&Math.abs(diff)>Math.max(1e-6,Math.abs(h.qty)*0.0005);
-      return `<div class="arow" style="grid-template-columns:34px minmax(0,1fr) auto">
-        ${icoHtml(h.sym)}
-        <div class="a-main">
-          <div class="a-l1"><span class="a-sym">${h.sym}</span></div>
-          <div class="a-l2">у трекері ${qf(h.qty)}</div>
-          ${off?`<div class="a-l2 ${k(diff)}" style="margin-top:3px">різниця ${diff>=0?'+':''}${qf(diff)}</div>`:''}
-        </div>
-        <div class="a-right" style="gap:6px">
-          <input type="number" step="any" value="${has?act:''}" onchange="setActual('${h.sym}',this.value)"
-            placeholder="фактично" style="width:132px;background:var(--ink-base);border:1px solid ${off?'var(--neg)':'var(--rule)'};
-            color:var(--text);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;text-align:right">
-          ${off?`<button class="btn sm" onclick="alignQty('${h.sym}')">Вирівняти</button>`:''}
-        </div>
-      </div>`;}).join('')}</div>
-    <div class="panel-bd" style="border-top:1px solid var(--rule-soft)">
-      <p class="faint" style="font-size:13px;margin:0">
-        «Вирівняти» додасть коригувальний запис на різницю. Для нових монет собівартість
-        візьметься за поточною ціною — поправ у «Транзакціях», якщо знаєш реальну.</p>
-    </div>
   </div>
 
   <div class="panel">
@@ -741,6 +709,97 @@ function vAssets(){
     </div>
   </div>`;
 }
+
+/* ---------- Asset detail ---------- */
+function vAsset(){
+  const sym=S.tab.slice(6);
+  const h=holdings()[sym];
+  if(!h) return `<div class="panel"><div class="empty">Актив ${esc(sym)} не знайдено</div></div>`;
+  const px=S.prices[sym], val=px!==undefined?h.qty*px:null;
+  const avg=h.qty>0?h.cost/h.qty:0;
+  const u=val!==null?val-h.cost:null;
+  const pc=(u!==null&&h.cost>0)?u/h.cost*100:null;
+
+  const txs=S.tx.filter(t=>t.sym===sym)
+    .sort((a,b)=>((b.ts||0)-(a.ts||0))||(b.date||'').localeCompare(a.date||''));
+  const rewQty=txs.filter(t=>t.type==='reward').reduce((s,t)=>s+n(t.qty),0);
+  const rewVal=px!==undefined?rewQty*px:null;
+
+  const pl=(S.placement||{})[sym]||{};
+  const placed=Object.values(pl).reduce((s,v)=>s+n(v),0);
+
+  return `
+  <div class="bar"><button class="btn quiet" onclick="go('assets')">← Усі активи</button></div>
+
+  <div class="panel">
+    <div class="panel-hd" style="gap:14px">
+      ${icoHtml(sym)}
+      <div><h2 style="font-size:19px">${sym}</h2>
+        <div class="faint" style="font-size:13px;font-family:var(--mono)">${qf(h.qty)} · ${px!==undefined?usd(px,px<1?4:2):'ціни немає'}</div></div>
+      <div class="grow"></div>
+      <div style="text-align:right">
+        <div class="num" style="font-size:22px;font-weight:700">${val!==null?usd(val):'—'}</div>
+        ${u!==null?`<div class="num ${k(u)}" style="font-size:14px">${sgn(u)} ${pc!==null?'('+pctS(pc)+')':''}</div>`:''}
+      </div>
+    </div>
+    <div class="panel-bd">
+      <div class="stats">
+        <div class="stat"><div class="k">Середня купівля</div><div class="v num">${avg>0?usd(avg,avg<1?4:2):'—'}</div></div>
+        <div class="stat"><div class="k">Вкладено</div><div class="v num">${usd(h.cost)}</div></div>
+        <div class="stat"><div class="k">Незафіксований</div><div class="v num ${u!==null?k(u):''}">${u!==null?sgn(u):'—'}</div></div>
+        <div class="stat"><div class="k">Зафіксований</div><div class="v num ${k(h.realized)}">${h.realized?sgn(h.realized):'—'}</div><div class="s">з продажів</div></div>
+        <div class="stat"><div class="k">Реварди</div><div class="v num ${rewQty?'pos':''}">${rewQty?qf(rewQty):'—'}</div>
+          <div class="s">${rewVal?usd(rewVal)+' · дісталися безкоштовно':''}</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Де зберігається</h2>
+      <span class="note">${Math.abs(placed-h.qty)>Math.max(1e-6,h.qty*0.001)?'сума не збігається з балансом':''}</span></div>
+    <div class="alist">${S.locations.map(L=>{
+      const q=n(pl[L]||0);
+      return `<div class="arow" style="grid-template-columns:minmax(0,1fr) auto">
+        <div class="a-main"><div class="a-l1"><span class="a-sym" style="font-size:14px">${esc(L)}</span></div>
+          <div class="a-l2">${px!==undefined&&q?usd(q*px):''}</div></div>
+        <div class="a-right">
+          <input type="number" step="any" value="${q||''}" placeholder="0"
+            onchange="setPlace('${sym}','${esc(L)}',this.value)"
+            style="width:140px;background:var(--ink-base);border:1px solid var(--rule);color:var(--text);
+            border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px;text-align:right">
+        </div></div>`;}).join('')}
+    </div>
+    <div class="panel-bd" style="border-top:1px solid var(--rule-soft)">
+      <p class="faint" style="font-size:13px;margin:0">Разом розкладено ${qf(placed)} з ${qf(h.qty)}</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Транзакції</h2><span class="note">${txs.length} шт · можна редагувати</span></div>
+    <div class="alist">${txs.map(t=>txEditRow(t,sym)).join('') || '<div class="empty">Немає</div>'}</div>
+  </div>`;
+}
+
+function txEditRow(t,sym){
+  const tl={buy:'Купівля',sell:'Продаж',reward:'Реварди'}[t.type]||t.type;
+  return `<div style="padding:12px 16px;border-bottom:1px solid var(--rule-soft)">
+    <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:9px">
+      <span class="a-badge ${t.type==='sell'?'neg':'pos'}">${tl}</span>
+      ${t.ext?'<span class="chip">свої гроші</span>':''}
+      ${t.note?`<span class="faint" style="font-size:12.5px">${esc(t.note)}</span>`:''}
+      <div class="grow" style="flex:1"></div>
+      <button class="btn sm quiet danger" onclick="delTx('${t.id}')">Видалити</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px">
+      <div class="f"><label>Дата</label><input type="date" value="${t.date||''}" onchange="editTx('${t.id}','date',this.value)"></div>
+      <div class="f"><label>Кількість</label><input type="number" step="any" value="${t.qty}" onchange="editTx('${t.id}','qty',this.value)"></div>
+      <div class="f"><label>Ціна</label><input type="number" step="any" value="${t.price}" onchange="editTx('${t.id}','price',this.value)"></div>
+      <div class="f"><label>Місце</label><select onchange="editTx('${t.id}','loc',this.value)">
+        ${S.locations.map(l=>`<option ${t.loc===l?'selected':''}>${esc(l)}</option>`).join('')}</select></div>
+    </div>
+  </div>`;
+}
+
 
 function vTx(){
   const rows=[...S.tx].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
@@ -1045,6 +1104,20 @@ function addLoc(){
 }
 function delLoc(i){ S.locations.splice(i,1); save(); render(); }
 
+function setPlace(sym,loc,v){
+  S.placement=S.placement||{};
+  S.placement[sym]=S.placement[sym]||{};
+  const q=n(v);
+  if(!q) delete S.placement[sym][loc]; else S.placement[sym][loc]=q;
+  save(); render();
+}
+function editTx(id,field,v){
+  const t=S.tx.find(x=>x.id===id); if(!t) return;
+  if(field==='qty'||field==='price') t[field]=n(v);
+  else if(field==='date'){ t.date=v; t.ts=Date.parse(v); }
+  else t[field]=v;
+  save(); render();
+}
 function setActual(sym,v){
   S.actual=S.actual||{};
   if(v===''||v===null) delete S.actual[sym]; else S.actual[sym]=n(v);
