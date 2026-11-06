@@ -147,6 +147,38 @@ nav button.on{color:var(--text);border-bottom-color:var(--gold)}
   .a-pnl{font-size:13.5px}
   .shell{padding:0 10px}
 }
+
+/* ===== Порадник ===== */
+.vb{font-size:11px;font-weight:600;padding:2px 8px;border-radius:5px;white-space:nowrap}
+.vb-buy{background:rgba(95,211,166,.15);color:var(--pos)}
+.vb-hold{background:rgba(201,162,39,.15);color:var(--gold)}
+.vb-skip{background:var(--ink-raised);color:var(--text-2)}
+.vb-exit{background:rgba(232,115,95,.13);color:var(--neg)}
+.score{font-size:18px;font-weight:700}
+.vsum{display:flex;flex-direction:column;gap:6px}
+.advc{border-bottom:1px solid var(--rule-soft)}
+.advc:last-child{border-bottom:none}
+.advc .arow{border-bottom:none}
+.advc.open{background:rgba(255,255,255,.015)}
+.advd{padding:0 16px 16px}
+.vd{font-size:13px;color:var(--text-2);margin:8px 0 12px}
+.pbar{display:grid;grid-template-columns:96px 1fr 30px;gap:9px;align-items:center;margin:5px 0}
+.pbar.big{grid-template-columns:1fr;margin:8px 0 0}
+.pl{font-size:12px;color:var(--text-3)}
+.pt{height:6px;background:var(--ink-raised);border-radius:4px;overflow:hidden;display:block}
+.pbar.big .pt{height:8px}
+.pf{display:block;height:100%;background:var(--gold);border-radius:4px}
+.pf.done{background:var(--pos)}
+.pv{font-size:12px;text-align:right;color:var(--text-2)}
+.pc{font-size:13px;margin:8px 0;line-height:1.45}
+.pc span{font-weight:700;margin-right:4px}
+.tg{margin-top:12px;padding:11px 12px;background:var(--ink-base);border:1px solid var(--rule-soft);border-radius:8px}
+.lv{display:flex;justify-content:space-between;gap:10px;font-size:13px;margin:4px 0}
+.lv span:first-child{color:var(--text-3)}
+.sig{font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--rule);line-height:1.4}
+.sig-exit{border-color:rgba(95,211,166,.4);background:rgba(95,211,166,.07)}
+.sig-entry{border-color:rgba(122,165,210,.45);background:rgba(122,165,210,.08)}
+.sig-hot{border-color:rgba(201,162,39,.4);background:rgba(201,162,39,.07)}
 .tw{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
 th{
@@ -468,6 +500,7 @@ async function fetchPrices(){
   const syms=new Set();
   Object.entries(holdings()).forEach(([s,h])=>{ if(h.qty>1e-9) syms.add(s); });
   S.pools.forEach(p=>{ if(p.sym) syms.add(p.sym.toUpperCase()); });
+  if(typeof CANDS!=='undefined') CANDS.forEach(s=>syms.add(s));
   if(!syms.size){ toast('Нема активів для оновлення'); return; }
 
   const need=[...syms];
@@ -480,7 +513,7 @@ async function fetchPrices(){
   need.forEach(s=>{ if(got[s]===undefined){ const id=cgId(s); if(id) map[id]=s; } });
   const ids=Object.keys(map);
   if(ids.length){
-    let url='https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&per_page=250&ids='+ids.join(',');
+    let url='https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&per_page=250&price_change_percentage=30d,1y&ids='+ids.join(',');
     if(S.cgKey) url+='&x_cg_demo_api_key='+encodeURIComponent(S.cgKey);
     try{
       const r=await fetch(url);
@@ -494,6 +527,10 @@ async function fetchPrices(){
           if(c.current_price!==null&&c.current_price!==undefined){ got[s]=c.current_price; k++; }
           if(c.image) S.icons[s]=c.image;
           if(c.price_change_percentage_24h!=null){ (S.chg=S.chg||{})[s]=c.price_change_percentage_24h; }
+          const mx=c.max_supply||c.total_supply;
+          (S.mkt=S.mkt||{})[s]={rank:c.market_cap_rank,mcap:c.market_cap,vol:c.total_volume,
+            circ:(mx&&c.circulating_supply)?c.circulating_supply/mx:null,ath:c.ath,
+            ch30:c.price_change_percentage_30d_in_currency,ch1y:c.price_change_percentage_1y_in_currency};
         });
         log.push('CoinGecko: '+k+' цін');
       }
@@ -528,6 +565,7 @@ async function fetchPrices(){
 const TABS=[
   ['overview','Огляд'],
   ['assets','Активи'],
+  ['advisor','Порадник'],
   ['tx','Транзакції'],
   ['defi','DeFi пули'],
   ['places','Місця зберігання'],
@@ -541,7 +579,7 @@ function render(){
   const v=document.getElementById('view');
   v.innerHTML = S.tab.startsWith('asset:')
     ? vAsset()
-    : ({overview:vOverview,assets:vAssets,tx:vTx,defi:vDefi,places:vPlaces,data:vData})[S.tab]();
+    : ({overview:vOverview,assets:vAssets,advisor:vAdvisor,tx:vTx,defi:vDefi,places:vPlaces,data:vData})[S.tab]();
 }
 function go(t){ S.tab=t; save(); render(); window.scrollTo(0,0); }
 
@@ -801,6 +839,8 @@ function vAsset(){
       </div>
     </div>
   </div>
+
+  ${advCard(sym,h)}
 
   <div class="panel">
     <div class="panel-hd"><h2>Де зберігається</h2>
@@ -1411,8 +1451,525 @@ if(!load()){
   ];
   save();
 }
+const MKT_SEED={"ETH":{"rank":2,"mcap":274220966472,"vol":24016746208,"circ":1.0,"ath":4946.05,"ch30":-16.2179,"ch1y":-42.2574},"HYPE":{"rank":10,"mcap":22277119570,"vol":3706694720,"circ":0.23940681437414146,"ath":97.96,"ch30":7.8371,"ch1y":95.3975},"ATOM":{"rank":81,"mcap":828814955,"vol":52243236,"circ":1.0,"ath":43.84,"ch30":-11.2949,"ch1y":-50.1097},"DOT":{"rank":57,"mcap":1618916263,"vol":138624871,"circ":0.8141541701543599,"ath":54.98,"ch30":-21.3261,"ch1y":-68.441},"OP":{"rank":155,"mcap":235262766,"vol":100357219,"circ":0.5333617080468684,"ath":4.84,"ch30":-21.4184,"ch1y":-76.1903},"APT":{"rank":98,"mcap":550168279,"vol":81493461,"circ":0.4208114732783178,"ath":19.92,"ch30":-22.3164,"ch1y":-81.3256},"ZK":{"rank":250,"mcap":113079125,"vol":13761781,"circ":0.5247787258095238,"ath":0.320983,"ch30":-16.2422,"ch1y":-67.1939},"STRK":{"rank":128,"mcap":339895141,"vol":84215058,"circ":0.7458565323375931,"ath":4.41,"ch30":2.9589,"ch1y":-61.8733},"NEAR":{"rank":21,"mcap":5631790458,"vol":1135303665,"circ":0.9999999778679601,"ath":20.44,"ch30":-15.3548,"ch1y":88.6001},"ARB":{"rank":71,"mcap":1125856119,"vol":261360744,"circ":0.6892115031,"ath":2.39,"ch30":-18.6871,"ch1y":-47.0968},"ZRO":{"rank":89,"mcap":671664970,"vol":194978288,"circ":0.3999761277281288,"ath":7.47,"ch30":-10.1008,"ch1y":2.9671},"SUI":{"rank":30,"mcap":3678353587,"vol":667990060,"circ":0.4118270447640389,"ath":5.35,"ch30":-22.9526,"ch1y":-63.5313},"ADA":{"rank":18,"mcap":7283012406,"vol":477068500,"circ":0.8349221616176417,"ath":3.09,"ch30":-20.8783,"ch1y":-69.3555},"XCH":{"rank":774,"mcap":23011666,"vol":608436,"circ":0.539363059059287,"ath":1645.12,"ch30":-24.9563,"ch1y":-82.4445},"EIGEN":{"rank":187,"mcap":175910114,"vol":47064371,"circ":0.546686414090361,"ath":5.65,"ch30":-31.1469,"ch1y":-83.8506},"LTC":{"rank":25,"mcap":4359008304,"vol":350615925,"circ":0.9258474537461562,"ath":410.26,"ch30":-16.3377,"ch1y":-41.909},"DYDX":{"rank":294,"mcap":88418657,"vol":6976179,"circ":0.8460942164335754,"ath":4.52,"ch30":-25.3863,"ch1y":-68.9411},"DOGE":{"rank":12,"mcap":11924698103,"vol":984632950,"circ":0.9998428474938997,"ath":0.731578,"ch30":-18.5821,"ch1y":-59.55},"CAKE":{"rank":90,"mcap":653650450,"vol":70983911,"circ":0.8651523801802565,"ath":43.96,"ch30":-27.7935,"ch1y":-26.2447},"MINA":{"rank":321,"mcap":76685364,"vol":9137006,"circ":1.0,"ath":9.09,"ch30":-58.9522,"ch1y":-40.3508},"KSM":{"rank":360,"mcap":66832923,"vol":1838019,"circ":1.0,"ath":621.71,"ch30":-30.8557,"ch1y":-64.3399},"DASH":{"rank":93,"mcap":619512109,"vol":90759783,"circ":0.6807892394503039,"ath":1493.59,"ch30":-20.8543,"ch1y":6.7961},"XRP":{"rank":5,"mcap":80027689796,"vol":3505879263,"circ":0.63351197653,"ath":3.65,"ch30":-15.9378,"ch1y":-50.0347},"NOT":{"rank":590,"mcap":35041107,"vol":4996397,"circ":0.9704500204837764,"ath":0.02836145,"ch30":-28.8201,"ch1y":-54.8006},"1INCH":{"rank":253,"mcap":111718828,"vol":27941506,"circ":0.9370493104850022,"ath":8.65,"ch30":-22.231,"ch1y":-53.2203},"UMA":{"rank":659,"mcap":30013316,"vol":3873303,"circ":0.7035079175042631,"ath":41.56,"ch30":-21.5679,"ch1y":-70.4093},"SOL":{"rank":7,"mcap":57773244909,"vol":5746249395,"circ":0.9267152730909941,"ath":293.31,"ch30":-17.633,"ch1y":-49.1071},"BTC":{"rank":1,"mcap":1576224100954,"vol":52370204467,"circ":0.9573983333333334,"ath":126080,"ch30":-5.7503,"ch1y":-27.8057},"LINK":{"rank":17,"mcap":8504371335,"vol":808771716,"circ":0.766849970424884,"ath":52.7,"ch30":-23.0053,"ch1y":-37.6077},"ONDO":{"rank":50,"mcap":1915473717,"vol":251187726,"circ":0.4869330647,"ath":2.14,"ch30":-22.1791,"ch1y":-45.2947},"BNB":{"rank":4,"mcap":93910507323,"vol":3519770762,"circ":0.6575571345000001,"ath":1369.99,"ch30":-6.0902,"ch1y":-35.0596}};
+const TECH_SEED={"ETH":{"ma200":2158.6544152836937,"ma50":2525.972977001239,"rsi":30.427559818303564,"high90":2775.1686826711957,"low90":1858.5376969949996},"HYPE":{"ma200":66.391394873515,"ma50":85.13440247686745,"rsi":67.90861177436642,"high90":97.19050715676083,"low90":52.550690257877115},"ATOM":{"ma200":1.703084649107928,"ma50":1.7235772914975493,"rsi":37.15802012055068,"high90":2.064856849523657,"low90":1.2645409217844468},"DOT":{"ma200":1.0335518922303195,"ma50":1.124640815141152,"rsi":34.91756258426632,"high90":1.267704162491839,"low90":0.7510040523927409},"OP":{"ma200":0.11220589093834862,"ma50":0.12373380616527457,"rsi":36.95767279778256,"high90":0.15856679585011993,"low90":0.08201670892797308},"APT":{"ma200":0.73693928864656,"ma50":0.75442331710527,"rsi":34.21093282741268,"high90":0.9006135439399815,"low90":0.5178719656482772},"ZK":{"ma200":0.012011272937850153,"ma50":0.0125966783892432,"rsi":32.75403805357708,"high90":0.017020606643026175,"low90":0.007214540682969488},"STRK":{"ma200":0.037634146302481054,"ma50":0.051664051365546027,"rsi":42.45737883481432,"high90":0.12302065287698359,"low90":0.022450822304657683},"NEAR":{"ma200":2.5048588319952128,"ma50":4.475238753548464,"rsi":44.75383385949837,"high90":5.887577099447574,"low90":1.5879597131538},"ARB":{"ma200":0.12202742635717068,"ma50":0.18792532555285996,"rsi":42.391728023319494,"high90":0.23495086032155854,"low90":0.07272258489044682},"ZRO":{"ma200":1.2315419046226037,"ma50":1.6572700624750845,"rsi":46.41032854402602,"high90":2.251192747677942,"low90":0.7150016944293183},"SUI":{"ma200":0.865081580207225,"ma50":0.996508429739157,"rsi":38.756825402356405,"high90":1.2628706474751414,"low90":0.6514311908607086},"ADA":{"ma200":0.2097104473332123,"ma50":0.2290398056876973,"rsi":32.78016993986593,"high90":0.2704105568382824,"low90":0.1741249817054162},"XCH":{"ma200":1.7835233072529308,"ma50":1.5063615344370718,"rsi":28.671849275420143,"high90":1.7282193517547635,"low90":1.198304627841647},"EIGEN":{"ma200":0.21045141914718235,"ma50":0.23149033804417463,"rsi":28.388147409504427,"high90":0.275807601097039,"low90":0.16666960562874655},"LTC":{"ma200":52.159578693734105,"ma50":61.586522730857816,"rsi":40.03009745298446,"high90":72.55379118766604,"low90":43.806923130603906},"DYDX":{"ma200":0.1316524092861076,"ma50":0.1266164023073891,"rsi":34.13420600107263,"high90":0.1528371796909804,"low90":0.10010635845655583},"DOGE":{"ma200":0.08643228839996986,"ma50":0.08621587759054172,"rsi":37.302227718080765,"high90":0.10035920391876493,"low90":0.06901954790818378},"CAKE":{"ma200":1.7053718310531345,"ma50":2.334239731379153,"rsi":30.919845412125127,"high90":2.829416305525229,"low90":1.4020756079154357},"MINA":{"ma200":0.06441245647665884,"ma50":0.10112430020949331,"rsi":30.352079229806563,"high90":0.1631057814406378,"low90":0.037803581779452596},"KSM":{"ma200":4.007841281359578,"ma50":4.430796869029059,"rsi":27.322045921224458,"high90":5.232507671693569,"low90":2.8737367592884113},"DASH":{"ma200":42.49622301489151,"ma50":55.46846544386706,"rsi":40.70367579206832,"high90":71.83655862163552,"low90":29.734917104971814},"XRP":{"ma200":1.2774146090896932,"ma50":1.394791159167802,"rsi":39.27827574417541,"high90":1.571302241663608,"low90":0.9927072784932938},"NOT":{"ma200":0.00042547946881164503,"ma50":0.0004460048103406579,"rsi":33.01048525956891,"high90":0.0005249238023065392,"low90":0.000342812248206712},"1INCH":{"ma200":0.08714538778999206,"ma50":0.09576829661282296,"rsi":24.612877789000976,"high90":0.1071062281019188,"low90":0.07970809453181513},"UMA":{"ma200":0.3984762918623208,"ma50":0.3887891165074404,"rsi":29.09181364592135,"high90":0.4332029323168012,"low90":0.31877365272475},"SOL":{"ma200":88.74962256371664,"ma50":109.27183095636532,"rsi":36.05080502751161,"high90":122.0809849549597,"low90":72.63053979307217},"BTC":{"ma200":73126.20311473076,"ma50":81924.60890725761,"rsi":38.686278982934326,"high90":86596.74004249526,"low90":62843.70368466329},"LINK":{"ma200":10.00213392574808,"ma50":12.61753390686124,"rsi":38.93368937320686,"high90":15.439985573182222,"low90":8.14340732535387},"ONDO":{"ma200":0.37246236477187594,"ma50":0.4472915495622049,"rsi":39.116338258771215,"high90":0.5877132644435462,"low90":0.32338181384146436},"BNB":{"ma200":654.4038754565364,"ma50":749.2827971256942,"rsi":42.68506093398187,"high90":799.1366632487325,"low90":587.8165386223066}};
+/* ============================================================
+   9. ПОРАДНИК
+   ============================================================ */
+const FUND_DATE='30.10.2026';
+// f — фундаментальна оцінка 0–100 за дослідженням; tok — поправка до токеноміки
+// (викуп/спалювання = плюс, безлімітна емісія або розблокування для інсайдерів = мінус)
+const FUND={
+ BTC:{f:90,tok:10,cat:'Основа',pro:'Головний актив ринку, фіксована емісія, спотові ETF.',con:'Нижче максимуму приблизно на 38%, ціна залежить від макро і рішень ФРС.'},
+ ETH:{f:80,tok:0,cat:'Основа',pro:'Майже 36% монет у стейкінгу, стейкінг-ETF від BlackRock і Fidelity, апгрейд Glamsterdam проходить тестові мережі.',con:'У жовтні ETF втратили майже мільярд доларів, у 2026 емісія перевищила спалювання, дата Glamsterdam в основній мережі не визначена.'},
+ SOL:{f:78,tok:0,cat:'L1',pro:'Апгрейд Alpenglow запущено, у мережі стартував Open USD від Coinbase, Visa, Mastercard, Stripe і Shopify.',con:'Притоки в Solana-ETF майже зупинились.'},
+ HYPE:{f:82,tok:15,cat:'DeFi',pro:'Понад $1.4 млрд доходу, більша частина пішла на викуп HYPE; з 3 жовтня додалось друге джерело викупу — дохід із резервів USDC.',con:'В обігу лише чверть монет, щоквартальні розблокування близько 10 млн HYPE; ціна біля історичного максимуму.'},
+ NEAR:{f:72,tok:10,cat:'L1 / AI',pro:'Комісії NEAR Intents з лютого автоматично викуповують NEAR, інфляцію знижено з 5% до 2.5%, усі монети вже в обігу.',con:'Ріст значною мірою тримається на AI-наративі — такий моментум може швидко охолонути.'},
+ LINK:{f:78,tok:15,cat:'Інфраструктура',pro:'Стандарт оракулів, Chainlink Reserve постійно викуповує LINK; серед клієнтів Ondo, Robinhood, CME і Bank of England.',con:'Близько чверті монет ще не в обігу.'},
+ ONDO:{f:60,tok:0,cat:'RWA',pro:'Лідер токенізованих акцій — понад сотня активів, партнерство з Chainlink і BlackRock.',con:'В обігу менше половини монет — великі розблокування попереду.'},
+ BNB:{f:70,tok:15,cat:'Біржовий',pro:'Екосистема Binance, регулярні спалювання монет.',con:'Доля токена прив’язана до однієї біржі.'},
+ XRP:{f:62,tok:0,cat:'Платежі',pro:'Спотові ETF зі стабільними притоками.',con:'Використання мережі слабко впливає на ціну токена.'},
+ DOT:{f:45,tok:10,cat:'L1',pro:'З березня 2026 жорсткий ліміт 2.1 млрд монет, інфляцію знижено до приблизно 3%.',con:'Мало реального використання, ціна на 98% нижча за максимум.'},
+ ATOM:{f:30,tok:-30,cat:'L1',pro:'Протокол IBC з’єднує понад сотню блокчейнів.',con:'Немає ліміту емісії, інфляція 7–20% на рік, ні спалювання, ні викупу — монета постійно розмивається.'},
+ ARB:{f:45,tok:-5,cat:'L2',pro:'Сильна екосистема: Robinhood Chain, інституційні партнери, розробник докуповує ARB.',con:'Токен лише для голосування — дохід мережі до власників не доходить, розблокування тривають.'},
+ OP:{f:42,tok:10,cat:'L2',pro:'З лютого 2026 половина доходу Superchain іде на викуп OP.',con:'−76% за рік, в обігу трохи більше половини монет.'},
+ STRK:{f:30,tok:-10,cat:'L2',pro:'Технологія ZK-роллапу.',con:'Слабка корисність токена, регулярні розблокування для інсайдерів.'},
+ ZK:{f:25,tok:-10,cat:'L2',pro:'zkSync — помітний ZK-роллап.',con:'−67% за рік, половина монет ще не в обігу.'},
+ ZRO:{f:50,tok:-5,cat:'Інфраструктура',pro:'LayerZero — популярний протокол зв’язку між мережами.',con:'В обігу близько 40% монет, великі розблокування для інсайдерів.'},
+ SUI:{f:55,tok:-5,cat:'L1',pro:'Сильна технологія, інституційний інтерес.',con:'В обігу близько 41%, щомісячні розблокування, −64% за рік.'},
+ APT:{f:45,tok:10,cat:'L1',pro:'Ухвалено ліміт емісії і спалювання частини комісій.',con:'В обігу близько 42%, щомісяця розблоковується 11 млн APT, −81% за рік.'},
+ ADA:{f:40,tok:0,cat:'L1',pro:'Велика капіталізація, віддана спільнота.',con:'Мало DeFi-активності, −69% за рік.'},
+ LTC:{f:50,tok:0,cat:'Платежі',pro:'Стабільна давня мережа, майже всі монети в обігу.',con:'Немає драйвера росту.'},
+ DOGE:{f:45,tok:-15,cat:'Мем',pro:'Велика капіталізація, є ETF.',con:'Емісія не обмежена, ціна тримається на настроях.'},
+ DASH:{f:35,tok:0,cat:'Приватність',pro:'Одна з перших приватних монет.',con:'Давно втратила актуальність.'},
+ CAKE:{f:40,tok:10,cat:'DeFi',pro:'PancakeSwap, регулярне спалювання.',con:'−96% від максимуму.'},
+ EIGEN:{f:30,tok:-10,cat:'Рестейкінг',pro:'Лідер рестейкінгу.',con:'−84% за рік, розблокування для інсайдерів.'},
+ DYDX:{f:25,tok:0,cat:'DeFi',pro:'Децентралізована біржа ф’ючерсів.',con:'Програє конкуренцію Hyperliquid.'},
+ XCH:{f:15,tok:0,cat:'L1',pro:'—',con:'Ранг близько 770, −82% за рік — проєкт згасає.'},
+ MINA:{f:20,tok:0,cat:'L1',pro:'Легкий блокчейн на ZK-доказах.',con:'Ранг близько 320, −59% за місяць.'},
+ KSM:{f:15,tok:-15,cat:'L1',pro:'Тестова мережа Polkadot.',con:'Ранг близько 360, власного драйвера немає.'},
+ NOT:{f:15,tok:0,cat:'Мем',pro:'Telegram-гра.',con:'Ранг близько 590, хайп минув.'},
+ '1INCH':{f:25,tok:0,cat:'DeFi',pro:'Агрегатор обмінів.',con:'Втрачає частку ринку.'},
+ UMA:{f:20,tok:0,cat:'Інфраструктура',pro:'Оптимістичний оракул.',con:'Ранг близько 660, мала ліквідність.'}
+};
+const STABLE=new Set(['USDC','USDT','DAI']);
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+function mktOf(s){ return (S.mkt||{})[s] || MKT_SEED[s] || null; }
+function techOf(s){ return (S.tech||{})[s] || TECH_SEED[s] || null; }
+function vs200Of(s){
+  const t=techOf(s), px=S.prices[s];
+  if(!t||!t.ma200||px===undefined) return null;
+  return (px/t.ma200-1)*100;
+}
+
+function advScore(sym){
+  const F=FUND[sym], m=mktOf(sym), t=techOf(sym);
+  if(!F||!m) return null;
+  // тренд: відстань до 200-денної середньої, перетин 50/200 і динаміка за рік
+  let tr=50;
+  const v=vs200Of(sym);
+  if(v!==null){
+    let a=clamp(50+v*1.5,0,100)+(t.ma50>t.ma200?10:-10);
+    a=clamp(a,0,100);
+    const b=m.ch1y!=null?clamp(50+m.ch1y*0.5,0,100):a;
+    tr=(a+b)/2;
+  }
+  const r=m.circ;
+  let tk = r==null?50 : r>=0.9?90 : r>=0.75?70 : r>=0.6?50 : r>=0.45?35 : 20;
+  tk=clamp(tk+(F.tok||0),0,100);
+  const rk=m.rank||999;
+  const sz= rk<=20?100 : rk<=50?75 : rk<=100?55 : rk<=300?30 : 10;
+  const lr=(m.mcap&&m.vol)?m.vol/m.mcap:0;
+  const lq= lr>=0.1?90 : lr>=0.05?70 : lr>=0.02?50 : 30;
+  const total=0.30*F.f+0.25*tr+0.20*tk+0.15*sz+0.10*lq;
+  return {total:Math.round(total),parts:{fund:F.f,trend:Math.round(tr),tok:tk,size:sz,liq:lq}};
+}
+
+const VERDICTS={
+  buy:{t:'Докупити',cls:'vb-buy',d:'Сильна за більшістю критеріїв — кандидат на щомісячну докупку.'},
+  hold:{t:'Тримати',cls:'vb-hold',d:'Не продавати, але й не пріоритет для нових грошей.'},
+  skip:{t:'Не докупляти',cls:'vb-skip',d:'Слабкі місця переважають — нові гроші краще направити в сильніші монети.'},
+  exit:{t:'Розглянути вихід',cls:'vb-exit',d:'Слабка майже за всіма критеріями. Продаж зафіксує збиток, але ці гроші могли б працювати в сильнішому активі. Рішення — твоє.'}
+};
+function advVerdict(score){
+  if(score>=70) return 'buy';
+  if(score>=55) return 'hold';
+  if(score>=40) return 'skip';
+  return 'exit';
+}
+
+function advSignals(sym,h){
+  const out=[], px=S.prices[sym], t=techOf(sym);
+  if(px===undefined||!h) return out;
+  const sc=advScore(sym), vk=sc?advVerdict(sc.total):null;
+  const avg=h.qty>0?h.cost/h.qty:0;
+  if(avg>0 && px>=2*avg){
+    out.push({k:'exit',t:`Ціль 2× досягнута — щоб забрати вкладене, продай ${qf(h.cost/px)} ${sym} (≈${usd(h.cost)})`});
+  }
+  const tg=(S.targets||{})[sym];
+  if(tg && px>=tg) out.push({k:'exit',t:`Досягнуто твою ціль ${usd(tg,tg<1?4:2)}`});
+  if(t&&t.rsi!=null){
+    if(t.rsi<=35 && vk==='buy') out.push({k:'entry',t:`RSI ${Math.round(t.rsi)} — монета перепродана, хороша точка для докупки`});
+    else if(t.rsi>=70) out.push({k:'hot',t:`RSI ${Math.round(t.rsi)} — перегріто, з докупкою краще дочекатися відкату`});
+  }
+  const v=vs200Of(sym);
+  if(v!==null && v>50 && (vk==='buy'||vk==='hold'))
+    out.push({k:'hot',t:`Ціна на ${Math.round(v)}% вище 200-денної середньої — докуповувати лише частинами`});
+  return out;
+}
+
+function advPlan(budget){
+  const H=holdings(), rows=[];
+  for(const sym in FUND){
+    if(!H[sym]||H[sym].qty<=1e-9) continue;
+    const sc=advScore(sym); if(!sc||sc.total<70) continue;
+    const t=techOf(sym); let w=sc.total-60; const why=[];
+    if(t&&t.rsi!=null){
+      if(t.rsi<=35){ w*=1.3; why.push('перепродана'); }
+      else if(t.rsi>=65){ w*=0.6; why.push('перегріта — менше'); }
+    }
+    const v=vs200Of(sym); if(v!==null&&v>50){ w*=0.7; why.push('далеко від середньої — менше'); }
+    rows.push({sym,w,score:sc.total,why});
+  }
+  rows.sort((a,b)=>b.w-a.w);
+  const top=rows.slice(0,4);
+  const nc=(typeof candPick==='function')?candPick(top):null;
+  if(nc){ if(top.length>=4) top.pop(); nc.isNew=true; top.push(nc); top.sort((a,b)=>b.w-a.w); }
+  const W=top.reduce((s,r)=>s+r.w,0);
+  if(!W) return [];
+  top.forEach(r=>{ r.amt=Math.max(10,Math.round(budget*r.w/W/5)*5); });
+  const sum=top.reduce((s,r)=>s+r.amt,0);
+  top[0].amt+=budget-sum;
+  return top;
+}
+
+function advRebalance(){
+  const H=holdings(); let total=0,stable=0; const dead=[],dust=[];
+  for(const s in H){
+    const h=H[s]; if(h.qty<=1e-9) continue;
+    const px=S.prices[s]; if(px===undefined) continue;
+    const v=h.qty*px; total+=v;
+    if(STABLE.has(s)){ stable+=v; continue; }
+    const sc=advScore(s);
+    if(v<5) dust.push({s,v});
+    else if(sc&&sc.total<40) dead.push({s,v,score:sc.total});
+  }
+  return {total,stable,dead,dust};
+}
+
+/* ---- технічні дані: MA200, MA50, RSI — оновлюються у фоні раз на 12 год ---- */
+let techBusy=false;
+function rsiCalc(cl,n=14){
+  if(cl.length<n+1) return null;
+  let g=0,l=0;
+  for(let i=1;i<=n;i++){ const d=cl[i]-cl[i-1]; g+=Math.max(d,0); l+=Math.max(-d,0); }
+  let ag=g/n, al=l/n;
+  for(let i=n+1;i<cl.length;i++){ const d=cl[i]-cl[i-1]; ag=(ag*(n-1)+Math.max(d,0))/n; al=(al*(n-1)+Math.max(-d,0))/n; }
+  return al===0?100:100-100/(1+ag/al);
+}
+async function fetchTech(force){
+  if(techBusy) return;
+  if(!force && Date.now()-(S.techAt||0)<12*3600e3) return;
+  techBusy=true;
+  const H=holdings();
+  const syms=Object.keys(H).filter(s=>H[s].qty>1e-9&&FUND[s]&&cgId(s))
+    .concat(typeof CANDS!=='undefined'?CANDS.filter(s=>!(H[s]&&H[s].qty>1e-9)):[]);
+  S.tech=S.tech||{}; let done=0, ok=0;
+  for(const s of syms){
+    for(let a=0;a<2;a++){
+      try{
+        let u='https://api.coingecko.com/api/v3/coins/'+cgId(s)+'/market_chart?vs_currency=usd&days=220&interval=daily';
+        if(S.cgKey) u+='&x_cg_demo_api_key='+encodeURIComponent(S.cgKey);
+        const r=await fetch(u);
+        if(r.status===429){ await sleep(15000); continue; }
+        if(!r.ok) break;
+        const cl=(await r.json()).prices.map(p=>p[1]);
+        if(cl.length<60) break;
+        const last200=cl.slice(-200);
+        S.tech[s]={ma200:last200.reduce((x,y)=>x+y,0)/last200.length,
+                   ma50:cl.slice(-50).reduce((x,y)=>x+y,0)/50,
+                   rsi:rsiCalc(cl.slice(-120)),
+                   high90:Math.max(...cl.slice(-90)),low90:Math.min(...cl.slice(-90))};
+        ok++; break;
+      }catch(e){ break; }
+    }
+    done++; S.techProg=done+' з '+syms.length; save();
+    if(S.tab==='advisor' && !(document.activeElement&&document.activeElement.tagName==='INPUT')) render();
+    await sleep(2600);
+  }
+  if(ok) S.techAt=Date.now();
+  S.techProg=''; techBusy=false; save();
+  if(S.tab==='advisor'||S.tab.startsWith('asset:')) render();
+}
+
+/* ---- дії ---- */
+function setBudget(v){ S.dcaBudget=n(v)||150; save(); render(); }
+function setTarget(sym,v){
+  S.targets=S.targets||{};
+  if(v===''||!n(v)) delete S.targets[sym]; else S.targets[sym]=n(v);
+  save(); render();
+}
+function toggleAdv(sym){ S.advOpen = S.advOpen===sym?null:sym; save(); render(); }
+function openAdv(sym){ S.advOpen=sym; go('advisor'); }
+
+/* ---- вигляд ---- */
+function vbadge(k){ const V=VERDICTS[k]; return `<span class="vb ${V.cls}">${V.t}</span>`; }
+function barRow(label,val){
+  return `<div class="pbar"><span class="pl">${label}</span>
+    <span class="pt"><span class="pf" style="width:${clamp(val,0,100)}%"></span></span>
+    <span class="pv num">${Math.round(val)}</span></div>`;
+}
+function lvl(label,price,px){
+  if(!price||px===undefined) return '';
+  const d=(px/price-1)*100;
+  return `<div class="lv"><span>${label}</span><span class="num">${usd(price,price<1?4:2)}
+    <span class="faint">(${d>=0?'ціна вище на ':'до нього '}${f(Math.abs(d),0)}%)</span></span></div>`;
+}
+
+function targetBlock(sym,h){
+  const px=S.prices[sym], t=techOf(sym), m=mktOf(sym);
+  const avg=h.qty>0?h.cost/h.qty:0;
+  const tg=(S.targets||{})[sym];
+  let html='';
+  if(avg>0 && px!==undefined){
+    const x=px/avg, prog=clamp(x/2*100,0,100);
+    html+=`<div class="tg">
+      <div class="lv"><span>Середня купівля</span><span class="num">${usd(avg,avg<1?4:2)}</span></div>
+      <div class="lv"><span>Зараз</span><span class="num ${k(px-avg)}">${usd(px,px<1?4:2)} · ×${f(x,2)}</span></div>
+      <div class="lv"><span>Ціль 2× — забрати вкладене</span><span class="num">${usd(2*avg,avg<0.5?4:2)}</span></div>
+      <div class="pbar big"><span class="pt"><span class="pf ${x>=2?'done':''}" style="width:${prog}%"></span></span></div>
+      <div class="faint" style="font-size:12px;margin-top:4px">${x>=2
+        ?`Досягнуто. Продай ${qf(h.cost/px)} ${sym} — це поверне вкладені ${usd(h.cost)}, решта лишиться «безкоштовною».`
+        :`До цілі ${f((2/x-1)*100,0)}% росту.`}</div>
+    </div>`;
+  }else if(h.qty>0){
+    html+=`<div class="faint" style="font-size:12.5px;margin:4px 0 8px">Монети дісталися безкоштовно (реварди) — уся їхня вартість уже прибуток, ціль 2× не застосовується.</div>`;
+  }
+  html+=`<div style="margin-top:10px"><div class="pl" style="margin-bottom:5px">Орієнтири</div>
+    ${t?lvl('Максимум за 90 днів',t.high90,px):''}
+    ${t?lvl('200-денна середня',t.ma200,px):''}
+    ${m&&m.ath?lvl('Історичний максимум',m.ath,px):''}
+  </div>
+  <div class="f" style="margin-top:10px"><label>Своя ціль, $</label>
+    <input type="number" step="any" value="${tg??''}" placeholder="напр. ${px?f(px*1.5,px<1?4:2):''}"
+      onchange="setTarget('${sym}',this.value)"></div>`;
+  return html;
+}
+
+function coinCard(sym,h){
+  const sc=advScore(sym);
+  if(!sc) return '';
+  const vk=advVerdict(sc.total), F=FUND[sym], open=S.advOpen===sym;
+  const px=S.prices[sym], val=px!==undefined?h.qty*px:null;
+  const sig=advSignals(sym,h);
+  return `<div class="advc ${open?'open':''}">
+    <div class="arow" onclick="toggleAdv('${sym}')" style="cursor:pointer">
+      ${icoHtml(sym)}
+      <div class="a-main">
+        <div class="a-l1"><span class="a-sym">${sym}</span>${vbadge(vk)}</div>
+        <div class="a-l2">${esc(F.cat)} · ${val!==null?usd(val):'—'}${sig.length?` · <span style="color:var(--gold)">${sig.length} сигн.</span>`:''}</div>
+      </div>
+      <div class="a-right"><span class="score num">${sc.total}</span><span class="faint" style="font-size:11px">з 100</span></div>
+    </div>
+    ${open?`<div class="advd">
+      ${sig.map(s=>`<div class="sig sig-${s.k}">${esc(s.t)}</div>`).join('')}
+      <p class="vd">${VERDICTS[vk].d}</p>
+      ${barRow('Фундамент',sc.parts.fund)}
+      ${barRow('Тренд',sc.parts.trend)}
+      ${barRow('Токеноміка',sc.parts.tok)}
+      ${barRow('Розмір',sc.parts.size)}
+      ${barRow('Ліквідність',sc.parts.liq)}
+      <div class="pc"><span class="pos">+</span> ${esc(F.pro)}</div>
+      <div class="pc"><span class="neg">−</span> ${esc(F.con)}</div>
+      ${targetBlock(sym,h)}
+      <button class="btn sm quiet" style="margin-top:10px" onclick="go('asset:${sym}')">Сторінка активу →</button>
+    </div>`:''}
+  </div>`;
+}
+
+function vAdvisor(){
+  const H=holdings();
+  const have=Object.keys(H).filter(s=>H[s].qty>1e-9);
+  const scored=have.filter(s=>FUND[s]&&mktOf(s))
+    .map(s=>({s,sc:advScore(s)})).filter(x=>x.sc)
+    .sort((a,b)=>b.sc.total-a.sc.total);
+  const noData=have.filter(s=>!STABLE.has(s)&&!FUND[s]);
+  const budget=S.dcaBudget||150;
+  const plan=advPlan(budget);
+  const rb=advRebalance();
+  const allSig=[];
+  scored.forEach(({s})=>advSignals(s,H[s]).forEach(x=>allSig.push({s,...x})));
+  if(typeof CANDS!=='undefined') CANDS.forEach(s=>candSignals(s).forEach(x=>allSig.push({s,...x})));
+  const order={exit:0,entry:1,hot:2};
+  allSig.sort((a,b)=>order[a.k]-order[b.k]);
+  const btcV=vs200Of('BTC');
+  const groups={buy:[],hold:[],skip:[],exit:[]};
+  scored.forEach(x=>groups[advVerdict(x.sc.total)].push(x.s));
+
+  return `
+  <div class="panel">
+    <div class="panel-hd"><h2>Порадник</h2><span class="note">фундамент оцінено ${FUND_DATE}</span></div>
+    <div class="panel-bd">
+      ${btcV!==null?`<p style="margin:0 0 8px;font-size:14px">BTC ${btcV>=0?'на':'на'} ${f(Math.abs(btcV),0)}% ${btcV>=0?'вище':'нижче'} своєї 200-денної середньої —
+        ${btcV>=0?'ринок тримає довгий тренд, але останній місяць слабкий.':'ринок нижче довгого тренду, обережніше з ризикованими монетами.'}</p>`:''}
+      <div class="vsum">
+        ${['buy','hold','skip','exit'].map(k=>groups[k].length?`<div>${vbadge(k)} <span class="dim" style="font-size:13px">${groups[k].join(', ')}</span></div>`:'').join('')}
+      </div>
+      <p class="faint" style="font-size:12.5px;margin:10px 0 0">
+        ${S.techProg?'Оновлюю технічні дані: '+S.techProg+' · ':''}Оцінка — фільтр за об’єктивними критеріями, а не гарантія. Я не фінансовий радник, рішення за тобою.
+      </p>
+    </div>
+  </div>
+
+  ${allSig.length?`<div class="panel">
+    <div class="panel-hd"><h2>Сигнали</h2><span class="note">${allSig.length}</span></div>
+    <div class="panel-bd" style="display:flex;flex-direction:column;gap:7px">
+      ${allSig.map(x=>`<div class="sig sig-${x.k}" onclick="openAdv('${x.s}')" style="cursor:pointer"><b>${x.s}</b> · ${esc(x.t)}</div>`).join('')}
+    </div></div>`:''}
+
+  <div class="panel">
+    <div class="panel-hd"><h2>План на місяць</h2><span class="note">куди розкласти щомісячну суму</span></div>
+    <div class="panel-bd">
+      <div class="form" style="grid-template-columns:1fr auto;margin-bottom:12px">
+        <div class="f"><label>Сума на місяць, $</label>
+          <input type="number" step="5" value="${budget}" onchange="setBudget(this.value)"></div>
+      </div>
+      ${plan.length?plan.map(r=>`<div class="arow" style="grid-template-columns:34px minmax(0,1fr) auto;padding:9px 0" onclick="openAdv('${r.sym}')">
+        ${icoHtml(r.sym)}
+        <div class="a-main"><div class="a-l1"><span class="a-sym">${r.sym}</span>${r.isNew?'<span class="vb vb-buy">нова</span>':''}<span class="faint num" style="font-size:12px">бал ${r.score}</span></div>
+          <div class="a-l2">${r.why.length?esc(r.why.join(', ')):'стабільна докупка'}</div></div>
+        <div class="a-right"><span class="a-pnl num">$${r.amt}</span></div>
+      </div>`).join(''):'<p class="faint" style="margin:0">Немає монет з вердиктом «Докупити» — онови ціни.</p>'}
+      <label style="display:flex;gap:8px;align-items:center;font-size:13.5px;color:var(--text-2);margin-top:12px">
+        <input type="checkbox" ${S.candInPlan===false?'':'checked'} onchange="setCandInPlan(this.checked)">
+        пропонувати нові монети в плані
+      </label>
+      <p class="faint" style="font-size:12.5px;margin:8px 0 0">Беруться до чотирьох найсильніших монет. Перепродані отримують більшу частку, перегріті — меншу.
+        ${S.candInPlan===false?'':(plan.some(r=>r.isNew)?'Нова монета потрапляє в план, лише якщо вона помітно сильніша за твої.':'Цього місяця жодна нова монета не сильніша помітно за твої — тому план лише з того, що вже маєш.')}</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Твої монети</h2><span class="note">натисни, щоб розгорнути</span></div>
+    <div class="alist">${scored.map(x=>coinCard(x.s,H[x.s])).join('')}</div>
+    ${noData.length?`<div class="panel-bd" style="border-top:1px solid var(--rule-soft)"><p class="faint" style="font-size:12.5px;margin:0">Без оцінки (немає даних): ${noData.join(', ')}</p></div>`:''}
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Нові кандидати</h2><span class="note">монети, яких у тебе немає</span></div>
+    <div class="alist">${(typeof CANDS!=='undefined'?CANDS:[]).map(s=>({s,sc:advScore(s)})).filter(x=>x.sc)
+      .sort((a,b)=>b.sc.total-a.sc.total).map(x=>candCard(x.s)).join('')}</div>
+    <div class="panel-bd" style="border-top:1px solid var(--rule-soft)">
+      <p class="faint" style="font-size:12.5px;margin:0">Відібрано з топ-250 ринку: без токенізованих фондів, біржових токенів і мемкоїнів, з помірними розблокуваннями. У тебе вже понад 30 монет, тож нову варто брати, лише якщо вона справді сильніша за те, що є.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd"><h2>Ребаланс</h2></div>
+    <div class="panel-bd" style="display:flex;flex-direction:column;gap:10px;font-size:14px">
+      ${rb.total?`<div><b>${f(rb.stable/rb.total*100,0)}% портфеля в стейблкоїнах</b> (${usd(rb.stable)}, частина з них — у DeFi-пулі).
+        Це великий резерв. Можна частину розкладати за планом вище замість нових грошей — або тримати як подушку на просадку.</div>`:''}
+      ${rb.dead.length?`<div><b>Слабкі позиції на ${usd(rb.dead.reduce((a,x)=>a+x.v,0))}:</b> ${rb.dead.map(x=>x.s+' '+usd(x.v)).join(', ')}.
+        Якщо захочеш почистити портфель — ці гроші можна перекласти в монети з вердиктом «Докупити».</div>`:''}
+      ${rb.dust.length?`<div><b>Дрібниці до $5:</b> ${rb.dust.length} шт на ${usd(rb.dust.reduce((a,x)=>a+x.v,0))} — ${rb.dust.map(x=>x.s).join(', ')}.
+        Комісія за продаж з’їсть більшу частину, тож можна просто ігнорувати.</div>`:''}
+    </div>
+  </div>
+
+  ${tgPanel()}`;
+}
+
+function advCard(sym,h){
+  const sc=advScore(sym); if(!sc) return '';
+  const vk=advVerdict(sc.total), sig=advSignals(sym,h);
+  const avg=h.qty>0?h.cost/h.qty:0, px=S.prices[sym];
+  return `<div class="panel">
+    <div class="panel-hd"><h2>Порадник</h2>${vbadge(vk)}<div class="grow"></div>
+      <span class="score num">${sc.total}</span><span class="faint" style="font-size:11px">/100</span></div>
+    <div class="panel-bd">
+      ${sig.map(s=>`<div class="sig sig-${s.k}" style="margin-bottom:6px">${esc(s.t)}</div>`).join('')}
+      ${avg>0&&px!==undefined?`<div class="pbar big" style="margin-top:4px"><span class="pt"><span class="pf ${px>=2*avg?'done':''}" style="width:${clamp(px/avg/2*100,0,100)}%"></span></span></div>
+        <div class="faint" style="font-size:12px;margin-top:4px">Ціль 2× — ${usd(2*avg,avg<0.5?4:2)}, зараз ×${f(px/avg,2)}</div>`:''}
+      <button class="btn sm quiet" style="margin-top:10px" onclick="openAdv('${sym}')">Детальніше в пораднику →</button>
+    </div>
+  </div>`;
+}
+
+Object.assign(MKT_SEED,{"TRX":{"rank":8,"mcap":29301854542,"vol":660043531,"circ":0.9999838838857729,"ath":0.431288,"ch30":-6.8558,"ch1y":5.065},"SKY":{"rank":60,"mcap":1589409757,"vol":8940431,"circ":0.9982565376126088,"ath":0.10087,"ch30":-15.7445,"ch1y":18.564},"TAO":{"rank":37,"mcap":2781568849,"vol":71113396,"circ":0.556093749636564,"ath":757.6,"ch30":-21.8723,"ch1y":-51.0728},"UNI":{"rank":25,"mcap":4427602847,"vol":441047700,"circ":0.6241304224803621,"ath":44.92,"ch30":-22.5753,"ch1y":22.7731},"AAVE":{"rank":47,"mcap":2088229052,"vol":242272730,"circ":0.9649707567209141,"ath":661.69,"ch30":-19.3298,"ch1y":-37.8377},"ZEC":{"rank":10,"mcap":21880762556,"vol":641540286,"circ":0.8102253055021333,"ath":3191.93,"ch30":-6.8103,"ch1y":235.3698},"XMR":{"rank":13,"mcap":11233657837,"vol":93816050,"circ":1.0,"ath":797.73,"ch30":10.5278,"ch1y":82.6009},"MORPHO":{"rank":55,"mcap":1680004291,"vol":30566028,"circ":0.703319677790597,"ath":4.17,"ch30":-3.7434,"ch1y":19.7158},"RENDER":{"rank":81,"mcap":846169803,"vol":31525994,"circ":0.828255646713107,"ath":13.53,"ch30":-16.7143,"ch1y":-30.3177}});
+Object.assign(TECH_SEED,{"TRX":{"ma200":0.33366448268874443,"ma50":0.3340971138263433,"rsi":34.37303109637443,"high90":0.3520758193218381,"low90":0.3085627754997794},"SKY":{"ma200":0.06677694005110682,"ma50":0.07344322561781587,"rsi":42.88731193540162,"high90":0.09757807241610483,"low90":0.05081051579814886},"TAO":{"ma200":242.78574668428783,"ma50":273.66952624549793,"rsi":36.3137844026916,"high90":321.2077783551807,"low90":190.67093053611111},"UNI":{"ma200":4.712363992469841,"ma50":7.870787884959815,"rsi":46.88154678726506,"high90":10.218740498650503,"low90":3.1971416665971573},"AAVE":{"ma200":108.02846143344887,"ma50":150.06996209525528,"rsi":42.56583256240491,"high90":184.06137166149756,"low90":85.94219943917633},"ZEC":{"ma200":738.1491864370414,"ma50":1312.1436135276222,"rsi":52.9660618820929,"high90":1653.1168422981227,"low90":480.66499804092575},"XMR":{"ma200":423.8330282583084,"ma50":560.5966218483264,"rsi":55.277955803750366,"high90":621.321206863496,"low90":351.07100922807496},"MORPHO":{"ma200":2.1343708006952813,"ma50":2.4202619081948074,"rsi":53.05032086029785,"high90":2.9026212482639075,"low90":1.8400586135640542},"RENDER":{"ma200":1.6737355708919242,"ma50":1.795992195810891,"rsi":36.756808956152916,"high90":2.1415737369018655,"low90":1.2533657683809478}});
+/* ---- кандидати поза портфелем ---- */
+const CAND_FUND={
+ TRX:{f:68,tok:5,cat:'L1 / платежі',pro:'Головна «магістраль» стейблкоїнів: на TRON близько $89 млрд USDT — майже третина ринку; дохід мережі $600–720 млн за квартал; усі монети в обігу.',con:'Сильна залежність від USDT і від одного засновника, майже немає DeFi поза переказами.'},
+ SKY:{f:70,tok:15,cat:'DeFi',pro:'Колишній MakerDAO: понад $100 млн уже витрачено на викуп SKY, дохід 2026 оцінюють у $611 млн (+81%), усі монети в обігу.',con:'Невелика ліквідність, дохід залежить від ставок і попиту на стейблкоїн USDS.'},
+ TAO:{f:68,tok:10,cat:'AI',pro:'Лідер децентралізованого AI. Наступний халвінг близько 14 грудня 2026 вдвічі скоротить емісію; мережа натренувала 72-мільярдну мовну модель.',con:'Емісія для підмереж досі значно більша за реальний дохід, в обігу близько 56% монет.'},
+ UNI:{f:62,tok:10,cat:'DeFi',pro:'З грудня 2025 частина комісій Uniswap іде на викуп і спалювання UNI, з казни спалили 100 млн монет, механізм розширили на L2.',con:'Обсяг викупу поки малий відносно капіталізації, ціна на 50% вище 200-денної середньої.'},
+ AAVE:{f:65,tok:10,cat:'DeFi',pro:'Найбільший протокол позик, постійний викуп AAVE, майже всі монети в обігу.',con:'Дохід від позик упав на чверть, бюджет викупу урізали з $50 до $30 млн на рік.'},
+ ZEC:{f:55,tok:0,cat:'Приватність',risky:'Дуже волатильна',pro:'Найсильніший сектор 2026 року, є ETF від Grayscale.',con:'Ріст у рази за рік, звинувачення в накачуванні ціни, обвали до −40% за день, ризик делістингів. Для спокійного щомісячного DCA не підходить.'},
+ XMR:{f:55,tok:0,cat:'Приватність',pro:'Найбільша приватна монета, повністю в обігу.',con:'Делістнута з Binance і більшості великих бірж — купити складно, регуляторний ризик.',na:'Немає на Binance'},
+ MORPHO:{f:58,tok:-5,cat:'DeFi',pro:'Протокол позик, що швидко росте.',con:'Засновник проти викупу — дохід протоколу до власників токена не доходить.'},
+ RENDER:{f:52,tok:-5,cat:'AI / GPU',pro:'Ринок GPU для рендеру й AI, реальні клієнти.',con:'Нових монет випускається більше, ніж спалюється.'}
+};
+Object.entries(CAND_FUND).forEach(([s,v])=>{ v.cand=true; FUND[s]=v; });
+Object.assign(CG,{TRX:'tron',SKY:'sky',AAVE:'aave',ZEC:'zcash',XMR:'monero',MORPHO:'morpho',RENDER:'render-token'});
+const CANDS=Object.keys(CAND_FUND);
+
+const CAND_V={
+  buy:{t:'Сильний кандидат',cls:'vb-buy'},
+  hold:{t:'Під спостереженням',cls:'vb-hold'},
+  skip:{t:'Поки ні',cls:'vb-skip'},
+  exit:{t:'Поки ні',cls:'vb-skip'}
+};
+function cbadge(k){ const V=CAND_V[k]; return `<span class="vb ${V.cls}">${V.t}</span>`; }
+
+function candSignals(sym){
+  const out=[], t=techOf(sym), sc=advScore(sym);
+  if(!sc||!t) return out;
+  if(FUND[sym].na||FUND[sym].risky) return out;
+  if(advVerdict(sc.total)==='buy' && t.rsi!=null && t.rsi<=35)
+    out.push({k:'entry',t:`нова монета · RSI ${Math.round(t.rsi)} — перепродана, хороший момент, якщо хочеш додати`});
+  return out;
+}
+
+function candCard(sym){
+  const sc=advScore(sym); if(!sc) return '';
+  const F=FUND[sym], vk=advVerdict(sc.total), open=S.advOpen===sym;
+  const px=S.prices[sym], t=techOf(sym), m=mktOf(sym), sig=candSignals(sym);
+  return `<div class="advc ${open?'open':''}">
+    <div class="arow" onclick="toggleAdv('${sym}')" style="cursor:pointer">
+      ${icoHtml(sym)}
+      <div class="a-main">
+        <div class="a-l1"><span class="a-sym">${sym}</span>${cbadge(vk)}</div>
+        <div class="a-l2">${esc(F.cat)}${px!==undefined?' · '+usd(px,px<1?4:2):''}${F.na?` · <span class="neg">${esc(F.na)}</span>`:''}${F.risky?` · <span style="color:var(--gold)">${esc(F.risky)}</span>`:''}</div>
+      </div>
+      <div class="a-right"><span class="score num">${sc.total}</span><span class="faint" style="font-size:11px">з 100</span></div>
+    </div>
+    ${open?`<div class="advd">
+      ${sig.map(s=>`<div class="sig sig-${s.k}">${esc(s.t)}</div>`).join('')}
+      ${barRow('Фундамент',sc.parts.fund)}
+      ${barRow('Тренд',sc.parts.trend)}
+      ${barRow('Токеноміка',sc.parts.tok)}
+      ${barRow('Розмір',sc.parts.size)}
+      ${barRow('Ліквідність',sc.parts.liq)}
+      <div class="pc"><span class="pos">+</span> ${esc(F.pro)}</div>
+      <div class="pc"><span class="neg">−</span> ${esc(F.con)}</div>
+      <div style="margin-top:10px"><div class="pl" style="margin-bottom:5px">Орієнтири</div>
+        ${t?lvl('Максимум за 90 днів',t.high90,px):''}
+        ${t?lvl('200-денна середня',t.ma200,px):''}
+        ${m&&m.ath?lvl('Історичний максимум',m.ath,px):''}
+      </div>
+    </div>`:''}
+  </div>`;
+}
+
+function candPick(planRows){
+  if(S.candInPlan===false||!planRows.length) return null;
+  const weakest=Math.min(...planRows.map(r=>r.w));
+  let best=null;
+  for(const sym of CANDS){
+    if(FUND[sym].na||FUND[sym].risky) continue;
+    const sc=advScore(sym); if(!sc||sc.total<70) continue;
+    const t=techOf(sym); let w=sc.total-60; const why=['нова монета'];
+    if(t&&t.rsi!=null){ if(t.rsi<=35){w*=1.3;why.push('перепродана');} else if(t.rsi>=65){w*=0.6;why.push('перегріта');} }
+    const v=vs200Of(sym); if(v!==null&&v>50){w*=0.7;why.push('далеко від середньої');}
+    if(w>weakest*1.15 && (!best||w>best.w)) best={sym,w,score:sc.total,why};
+  }
+  return best;
+}
+function setCandInPlan(v){ S.candInPlan=v; save(); render(); }
+
+
+/* ---- налаштування для Telegram-бота ---- */
+function telegramConfig(){
+  const H=holdings(), coins=[];
+  for(const s in H){
+    const h=H[s]; if(h.qty<=1e-9||STABLE.has(s)) continue;
+    const id=cgId(s); if(!id) continue;
+    const px=S.prices[s], val=px!==undefined?h.qty*px:0;
+    const tg=(S.targets||{})[s];
+    const sc=advScore(s), buy=!!(sc&&advVerdict(sc.total)==='buy');
+    if(val<5 && !tg && !buy) continue;           // дрібниці не відстежуємо
+    const c={s,id,qty:+h.qty.toPrecision(8)};
+    if(h.cost>0) c.avg=+(h.cost/h.qty).toPrecision(8);
+    if(tg) c.target=tg;
+    if(buy) c.buy=1;
+    coins.push(c);
+  }
+  (typeof CANDS!=='undefined'?CANDS:[]).forEach(s=>{
+    if(FUND[s].na||FUND[s].risky||coins.some(c=>c.s===s)) return;
+    const sc=advScore(s); if(!sc||sc.total<70) return;
+    coins.push({s,id:cgId(s),buy:1,cand:1});
+  });
+  return {v:1,updated:today(),coins};
+}
+function copyTgConfig(){
+  const txt=JSON.stringify(telegramConfig());
+  const box=document.getElementById('tgCfg'); if(box){ box.value=txt; box.style.display='block'; }
+  const done=()=>{ S.tgExported=today(); save(); toast('Скопійовано — встав у секрет ALERTS_CONFIG'); };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(()=>toast('Виділи текст у полі нижче й скопіюй вручну'));
+  }else toast('Виділи текст у полі нижче й скопіюй вручну');
+}
+function tgPanel(){
+  const cfg=telegramConfig();
+  return `<div class="panel">
+    <div class="panel-hd"><h2>Сповіщення в Telegram</h2>
+      <span class="note">${S.tgExported?'останнє оновлення '+S.tgExported:'ще не налаштовано'}</span></div>
+    <div class="panel-bd">
+      <p style="font-size:13.5px;margin:0 0 10px">Бот стежитиме за ${cfg.coins.length} монетами: ціль 2×, твої цілі
+        і перепроданість сильних монет. Оновлюй ці налаштування, коли змінюєш портфель або ставиш нові цілі.</p>
+      <button class="btn gold" onclick="copyTgConfig()">Скопіювати налаштування для бота</button>
+      <textarea id="tgCfg" readonly style="display:none;width:100%;margin-top:10px;height:90px;background:var(--ink-base);
+        color:var(--text-2);border:1px solid var(--rule);border-radius:6px;padding:8px;font-family:var(--mono);font-size:11px"></textarea>
+      <p class="faint" style="font-size:12.5px;margin:10px 0 0">Налаштування містять твої монети й середні ціни, тому їх
+        вставляють у секрет репозиторію, а не у файл — так їх ніхто не побачить.</p>
+    </div>
+  </div>`;
+}
+
 render();
-fetchPrices();
+fetchPrices().then(()=>fetchTech());
 </script>
 </body>
 </html>
